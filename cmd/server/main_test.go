@@ -91,5 +91,5 @@ func TestHealthRecordIntegration(t *testing.T) {
 		t.Errorf("Expected step count %d, got %d", record.StepCount, retrievedRecord.StepCount)
 	}
 
-	// todo: update, delete
+	// todo: Separate test cases for update, delete etc.
 }
