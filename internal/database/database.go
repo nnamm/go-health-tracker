@@ -12,6 +12,13 @@ type DB struct {
 	*sql.DB
 }
 
+type DBInterface interface {
+	CreateHealthRecord(hr *models.HealthRecord) error
+	ReadHealthRecord(date time.Time) (*models.HealthRecord, error)
+	UpdateHealthRecord(hr *models.HealthRecord) error
+	DeleteHealthRecord(date time.Time) error
+}
+
 func NewDB(dataSourceName string) (*DB, error) {
 	db, err := sql.Open("sqlite3", dataSourceName)
 	if err != nil {

@@ -10,11 +10,10 @@ import (
 )
 
 type HealthRecordHandler struct {
-	DB *database.DB
-	// todo interface
+	DB database.DBInterface
 }
 
-func NewHealthRecordhandler(db *database.DB) *HealthRecordHandler {
+func NewHealthRecordHandler(db database.DBInterface) *HealthRecordHandler {
 	return &HealthRecordHandler{DB: db}
 }
 
