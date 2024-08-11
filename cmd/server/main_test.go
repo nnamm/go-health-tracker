@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -56,26 +57,51 @@ func TestMain(m *testing.M) {
 
 func TestHealthRecordIntegration(t *testing.T) {
 	// Create a record
-	dateStr := time.Now().Format("2006-01-02")
-	date, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	now := time.Now().Truncate(24 * time.Hour)
 	record := models.HealthRecord{
-		Date:      date,
+		Date:      now,
 		StepCount: 10000,
 	}
-	body, _ := json.Marshal(record)
 
-	res, err := http.Post(testServer.URL+"/health", "application/json", bytes.NewBuffer(body))
-	if err != nil {
-		t.Fatalf("Failed to create health record: %v", err)
+	// Use a custom struct for JSON marshaling to ensure consistent date format
+	type JSONRecord struct {
+		Date      string `json:"date"`
+		StepCount int    `json:"step_count"`
 	}
+
+	jsonRecord := JSONRecord{
+		Date:      now.Format("2006-01-02"),
+		StepCount: record.StepCount,
+	}
+
+	body, err := json.Marshal(jsonRecord)
+	if err != nil {
+		t.Fatalf("Failed to marshal record: %v", err)
+	}
+
+	// for Debug
+	t.Logf("Sending JSON: %s", string(body))
+
+	req, err := http.NewRequest("POST", testServer.URL+"/health", bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to send request: %v", err)
+	}
+	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusCreated {
-		t.Errorf("Expected status Create, got %v", res.Status)
+		bodyBytes, _ := io.ReadAll(res.Body)
+		t.Fatalf("Expected status Created, got %v. Response body: %s", res.Status, string(bodyBytes))
 	}
 
 	// Retrieve the record
+	dateStr := now.Format("2006-01-02")
 	res, err = http.Get(testServer.URL + "/health?date=" + dateStr)
 	if err != nil {
 		t.Fatalf("Failed to get health record: %v", err)

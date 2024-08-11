@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -18,14 +20,38 @@ func NewHealthRecordHandler(db database.DBInterface) *HealthRecordHandler {
 }
 
 func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading request body: %v", err)
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Received request body: %s", string(body))
+
+	if len(body) == 0 {
+		log.Print("Empty request body received")
+		http.Error(w, "Empty request body", http.StatusBadRequest)
+		return
+	}
+
 	var hr models.HealthRecord
-	if err := json.NewDecoder(r.Body).Decode(&hr); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err = json.Unmarshal(body, &hr); err != nil {
+		log.Printf("Error unmarshaling JSON: %v", err)
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Parsed HealthRecord: %+v", hr)
+
+	if hr.Date.IsZero() {
+		log.Print("Invalid date: zero value")
+		http.Error(w, "Invalid date", http.StatusBadRequest)
 		return
 	}
 
 	if err := h.DB.CreateHealthRecord(&hr); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error creating health record: %v", err)
+		http.Error(w, "Failed to create health record: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

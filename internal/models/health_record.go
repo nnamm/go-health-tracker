@@ -27,7 +27,7 @@ func (hr *HealthRecord) MarshalJSON() ([]byte, error) {
 func (hr *HealthRecord) UnmarshalJSON(date []byte) error {
 	type Alias HealthRecord
 	aux := &struct {
-		Date string `json:"date"`
+		Date interface{} `json:"date"`
 		*Alias
 	}{
 		Alias: (*Alias)(hr),
@@ -35,7 +35,29 @@ func (hr *HealthRecord) UnmarshalJSON(date []byte) error {
 	if err := json.Unmarshal(date, &aux); err != nil {
 		return err
 	}
-	var err error
-	hr.Date, err = time.Parse("2006-01-02", aux.Date)
-	return err
+
+	switch v := aux.Date.(type) {
+	case string:
+		// Try parsing as RFC3339 first (includes time and timezone)
+		t, err := time.Parse(time.RFC3339, v)
+		if err == nil {
+			hr.Date = t
+			return nil
+		}
+
+		// If that fails, try parsing as "2006-01-02"
+		t, err = time.Parse("2006-01-02", v)
+		if err == nil {
+			hr.Date = t
+			return nil
+		}
+
+		return err
+	case float64:
+		hr.Date = time.Unix(int64(v), 0)
+	default:
+		return json.Unmarshal(date, &hr.Date)
+	}
+
+	return nil
 }
