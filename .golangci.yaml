@@ -1,0 +1,49 @@
+# https://zenn.dev/naotama/articles/consider-golang-linter より拝借 + α
+
+linters:
+  enable-all: false
+  disable-all: true
+  enable: # please keep this alphabetized
+    - bodyclose # http response が close されているかどうかをチェックします
+    - containedctx # struct に Context を持たせないベストプラクティスをチェックします
+    - depguard # 利用しないパッケージを定義し確認します
+    - errcheck # [default] Go 1.13 で導入されたエラーラッピングで問題を起こすコードをチェックします
+    - errorlint # error チェックがされていないコードをチェックします
+    # - exhaustruct # すべてのフィールドが初期化されているかチェックします
+    - gocritic # 多くのチェック項目を持つ linter
+    - gofmt # go fmt がかけられているかをチェックします
+    - goimports # goimports がかけられているかをチェックします
+    - gosec # セキュリティ観点で様々な観点でチェックします
+    - gosimple # [default] 必要のないいくつかのパターンのコードをチェックします
+    - govet # [default] 公式の go vet です
+    - ineffassign # [default] 不要な代入が行われている箇所をチェックします
+    - misspell # スペルチェッカー
+    - nakedret # 長い関数における + naked return をチェックします
+    - paralleltest # t.Parallel() がついていないテストをチェックします
+    - rowserrcheck # database/sqlのRowsのエラーが正しく処理されているかをチェックします
+    - sqlclosecheck # sql.Rowsやsql.Stmtがcloseされてるかどうかをチェックします
+    - staticcheck # [default] 多くのチェック項目を持つ linter
+    - unconvert # 必要のない type 変換をチェックします
+    - unparam # 未使用引数をチェックします
+    - unused # 未使用変数/定数/関数/型をチェックします
+
+run:
+  timeout: 5m
+
+linters-settings:
+  depguard:
+    rules:
+      main:
+        deny:
+          - pkg: io/ioutil
+            desc: The io/ioutil package has been deprecated, see https://go.dev/doc/go1.16#ioutil
+  revive:
+    rules:
+      - name: package-comments # パッケージ/関数コメント disable
+        disabled: true
+issues:
+  # Maximum issues count per one linter. Set to 0 to disable. Default is 50.
+  max-issues-per-linter: 0
+
+  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
+  max-same-issues: 0
