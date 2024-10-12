@@ -76,6 +76,70 @@ func (h *HealthRecordHandler) GetHealthRecord(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(hr)
 }
 
+// GetHealthRecords retrieves record(s) for the specified date (year, month. date)
+func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	var records []models.HealthRecord
+	var err error
+
+	switch {
+	case query.Get("date") != "":
+		date := query.Get("date")
+		records, err = h.getByDate(date)
+	case query.Get("year") != "":
+		year := query.Get("year")
+		month := query.Get("month")
+		records, err = h.getByYearMonth(year, month)
+	default:
+		http.Error(w, "Invalid query parameters", http.StatusBadRequest)
+		return
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(records)
+}
+
+// getByDate retrieves a record for the specified date (YYYYMMDD)
+func (h *HealthRecordHandler) getByDate(dateStr string) ([]models.HealthRecord, error) {
+	date, err := time.Parse("20060102", dateStr)
+	if err != nil {
+		return nil, err
+	}
+	record, err := h.DB.ReadHealthRecord(date)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil { // Not exist record
+		return []models.HealthRecord{}, nil
+	}
+
+	return []models.HealthRecord{*record}, nil
+}
+
+// getByYearMonth retrieves record(s) for the specified Year and month (YYYY, MM)
+func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models.HealthRecord, error) {
+	year, err := time.Parse("2006", yearStr)
+	if err != nil {
+		return nil, err
+	}
+
+	if monthStr == "" {
+		return h.DB.ReadHealthRecordsByYear(year.Year())
+	}
+
+	month, err := time.Parse("01", monthStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return h.DB.ReadHealthRecordsByYearMonth(year.Year(), int(month.Month()))
+}
+
 func (h *HealthRecordHandler) UpdateHealthRecord(w http.ResponseWriter, r *http.Request) {
 	var hr models.HealthRecord
 	if err := json.NewDecoder(r.Body).Decode(&hr); err != nil {

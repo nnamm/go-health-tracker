@@ -15,10 +15,13 @@ type DB struct {
 type DBInterface interface {
 	CreateHealthRecord(hr *models.HealthRecord) error
 	ReadHealthRecord(date time.Time) (*models.HealthRecord, error)
+	ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error)
+	ReadHealthRecordsByYearMonth(year, month int) ([]models.HealthRecord, error)
 	UpdateHealthRecord(hr *models.HealthRecord) error
 	DeleteHealthRecord(date time.Time) error
 }
 
+// NewDB opens the DB
 func NewDB(dataSourceName string) (*DB, error) {
 	db, err := sql.Open("sqlite3", dataSourceName)
 	if err != nil {
@@ -30,6 +33,7 @@ func NewDB(dataSourceName string) (*DB, error) {
 	return &DB{db}, nil
 }
 
+// CreateTable inisializes the table
 func (db *DB) CreateTable() error {
 	query := `CREATE TABLE IF NOT EXISTS health_records (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +46,7 @@ func (db *DB) CreateTable() error {
 	return err
 }
 
-// CreateHealthRecord insert a new record
+// CreateHealthRecord inserts a new record
 func (db *DB) CreateHealthRecord(hr *models.HealthRecord) error {
 	query := `INSERT INTO health_records (date, step_count, created_at, updated_at) VALUES (?, ?, ?, ?)`
 	now := time.Now()
@@ -56,9 +60,52 @@ func (db *DB) ReadHealthRecord(date time.Time) (*models.HealthRecord, error) {
 	hr := &models.HealthRecord{}
 	err := db.QueryRow(query, date).Scan(&hr.ID, &hr.Date, &hr.StepCount, &hr.CreatedAt, &hr.UpdatedAt)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return hr, nil
+}
+
+// ReadHealthRecordsByYear retrieves record(s) by year
+func (db *DB) ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error) {
+	query := `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE strftime('%Y', date) = ?`
+	rows, err := db.Query(query, year)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []models.HealthRecord
+	for rows.Next() {
+		var hr models.HealthRecord
+		if err := rows.Scan(&hr.ID, &hr.Date, &hr.StepCount, &hr.CreatedAt, &hr.UpdatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, hr)
+	}
+	return records, nil
+}
+
+// ReadHealthRecordsByYearMonth retrieves record(s) by year and month
+func (db *DB) ReadHealthRecordsByYearMonth(year, month int) ([]models.HealthRecord, error) {
+	query := `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?`
+	rows, err := db.Query(query, year, month)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []models.HealthRecord
+	for rows.Next() {
+		var hr models.HealthRecord
+		if err := rows.Scan(&hr.ID, &hr.Date, &hr.StepCount, &hr.CreatedAt, &hr.UpdatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, hr)
+	}
+	return records, nil
 }
 
 // UpdateHealthRecord updates an existing health record
