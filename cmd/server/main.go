@@ -34,7 +34,7 @@ func main() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			healthHandler.GetHealthRecord(w, r)
+			healthHandler.GetHealthRecords(w, r)
 		case http.MethodPost:
 			healthHandler.CreateHealthRecord(w, r)
 		case http.MethodPut:
