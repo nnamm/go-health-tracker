@@ -13,7 +13,11 @@ import (
 
 type mockDB struct{}
 
-var fixedTime = time.Date(2024, 8, 11, 0, 0, 0, 0, time.UTC)
+var (
+	fixedTime0710 = time.Date(2024, 7, 10, 0, 0, 0, 0, time.UTC)
+	fixedTime0811 = time.Date(2024, 8, 11, 0, 0, 0, 0, time.UTC)
+	fixedTime0812 = time.Date(2024, 8, 12, 0, 0, 0, 0, time.UTC)
+)
 
 func (m *mockDB) CreateHealthRecord(hr *models.HealthRecord) error {
 	return nil
@@ -24,8 +28,8 @@ func (m *mockDB) ReadHealthRecord(date time.Time) (*models.HealthRecord, error) 
 		ID:        1,
 		Date:      date,
 		StepCount: 10000,
-		CreatedAt: fixedTime,
-		UpdatedAt: fixedTime,
+		CreatedAt: fixedTime0710,
+		UpdatedAt: fixedTime0710,
 	}, nil
 }
 
@@ -33,10 +37,24 @@ func (m *mockDB) ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error
 	return []models.HealthRecord{
 		{
 			ID:        1,
-			Date:      time.Date(year, 8, 11, 0, 0, 0, 0, time.UTC),
+			Date:      time.Date(year, 7, 10, 0, 0, 0, 0, time.UTC),
 			StepCount: 10000,
-			CreatedAt: fixedTime,
-			UpdatedAt: fixedTime,
+			CreatedAt: fixedTime0710,
+			UpdatedAt: fixedTime0710,
+		},
+		{
+			ID:        2,
+			Date:      time.Date(year, 8, 11, 0, 0, 0, 0, time.UTC),
+			StepCount: 11000,
+			CreatedAt: fixedTime0811,
+			UpdatedAt: fixedTime0811,
+		},
+		{
+			ID:        3,
+			Date:      time.Date(year, 8, 12, 0, 0, 0, 0, time.UTC),
+			StepCount: 12000,
+			CreatedAt: fixedTime0812,
+			UpdatedAt: fixedTime0812,
 		},
 	}, nil
 }
@@ -44,11 +62,18 @@ func (m *mockDB) ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error
 func (m *mockDB) ReadHealthRecordsByYearMonth(year, month int) ([]models.HealthRecord, error) {
 	return []models.HealthRecord{
 		{
-			ID:        1,
+			ID:        2,
 			Date:      time.Date(year, 8, 11, 0, 0, 0, 0, time.UTC),
-			StepCount: 10000,
-			CreatedAt: fixedTime,
-			UpdatedAt: fixedTime,
+			StepCount: 11000,
+			CreatedAt: fixedTime0811,
+			UpdatedAt: fixedTime0811,
+		},
+		{
+			ID:        3,
+			Date:      time.Date(year, 8, 12, 0, 0, 0, 0, time.UTC),
+			StepCount: 12000,
+			CreatedAt: fixedTime0812,
+			UpdatedAt: fixedTime0812,
 		},
 	}, nil
 }
@@ -123,50 +148,60 @@ func TestGetHealthRecords(t *testing.T) {
 	}{
 		{
 			name:           "Get by date",
-			url:            "/health/records?date=20240811",
+			url:            "/health/records?date=20240710",
 			expectedStatus: http.StatusOK,
-			expectedBody:   `[{"id":1, "date":"2024-08-11","step_count":10000, "created_at":"2024-08-11T00:00:00Z", "updated_at":"2024-08-11T00:00:00Z"}]`,
+			expectedBody:   `{"records": [{"id":1, "date":"2024-07-10","step_count":10000, "created_at":"2024-07-10T00:00:00Z", "updated_at":"2024-07-10T00:00:00Z"}]}`,
 			expectError:    false,
 		},
 		{
 			name:           "Get by year",
 			url:            "/health/records?year=2024",
 			expectedStatus: http.StatusOK,
-			expectedBody:   `[{"id":1, "date":"2024-08-11","step_count":10000, "created_at":"2024-08-11T00:00:00Z", "updated_at":"2024-08-11T00:00:00Z"}]`,
-			expectError:    false,
+			expectedBody: `{"records": [
+                              {"id":1, "date":"2024-07-10","step_count":10000, "created_at":"2024-07-10T00:00:00Z", "updated_at":"2024-07-10T00:00:00Z"},
+                              {"id":2, "date":"2024-08-11","step_count":11000, "created_at":"2024-08-11T00:00:00Z", "updated_at":"2024-08-11T00:00:00Z"},
+                              {"id":3, "date":"2024-08-12","step_count":12000, "created_at":"2024-08-12T00:00:00Z", "updated_at":"2024-08-12T00:00:00Z"}
+                           ]}`,
+			expectError: false,
 		},
 		{
 			name:           "Get by year and month",
 			url:            "/health/records?year=2024&month=08",
 			expectedStatus: http.StatusOK,
-			expectedBody:   `[{"id":1, "date":"2024-08-11","step_count":10000, "created_at":"2024-08-11T00:00:00Z", "updated_at":"2024-08-11T00:00:00Z"}]`,
-			expectError:    false,
+			expectedBody: `{"records": [
+                              {"id":2, "date":"2024-08-11","step_count":11000, "created_at":"2024-08-11T00:00:00Z", "updated_at":"2024-08-11T00:00:00Z"},
+                              {"id":3, "date":"2024-08-12","step_count":12000, "created_at":"2024-08-12T00:00:00Z", "updated_at":"2024-08-12T00:00:00Z"}
+                           ]}`,
+			expectError: false,
 		},
 		{
 			name:           "Invalid date format",
-			url:            "/health/records?date=2024-08-11",
+			url:            "/health/records?date=2024-07-10",
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   `[{"error":"Invalid date format. Use YYYYMMDD"}]`,
+			expectedBody:   `[{"error":Invalid date format: 2024-07-10 (Use YYYYMMDD)}]`,
 			expectError:    true,
 		},
-		// {
-		// 	name:           "Invalid year format",
-		// 	url:            "/health/records?year=24",
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	expectedBody:   `[{"error":"Invalid year format. Use YYYY"}]`,
-		// },
-		// {
-		// 	name:           "Invalid month format",
-		// 	url:            "/health/records?year=2024&month=8",
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	expectedBody:   `[{"error":"Invalid month format. Use MM"}]`,
-		// },
-		// {
-		// 	name:           "Month without year",
-		// 	url:            "/health/records?month=08",
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	expectedBody:   `[{"error":"Year is required when month is specified"}]`,
-		// },
+		{
+			name:           "Invalid year format",
+			url:            "/health/records?year=24",
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   `[{"error":Invalid year format: 24 (Use YYYY)}]`,
+			expectError:    true,
+		},
+		{
+			name:           "Invalid month format",
+			url:            "/health/records?year=2024&month=8",
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   `[{"error":Invalid month format: 8 (Use MM)}]`,
+			expectError:    true,
+		},
+		{
+			name:           "Invalid query parameters",
+			url:            "/health/records?month=08",
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   `[{"error":Invalid query parameters: expected date or year}]`,
+			expectError:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -195,20 +230,20 @@ func TestGetHealthRecords(t *testing.T) {
 				}
 			} else {
 				// Normal cases
-				var gotRecords []models.HealthRecord
-				err = json.Unmarshal(rr.Body.Bytes(), &gotRecords)
+				var gotResult HealthRecordResult
+				err = json.Unmarshal(rr.Body.Bytes(), &gotResult)
 				if err != nil {
 					t.Fatalf("Faild to unmarshal response body: %v", err)
 				}
 
-				var expectedRecords []models.HealthRecord
-				err = json.Unmarshal([]byte(tt.expectedBody), &expectedRecords)
+				var expectedResult HealthRecordResult
+				err = json.Unmarshal([]byte(tt.expectedBody), &expectedResult)
 				if err != nil {
 					t.Fatalf("Failed to unmarshal expected body: %v", err)
 				}
 
-				if !reflect.DeepEqual(gotRecords, expectedRecords) {
-					t.Errorf("handler returned unexpected body: got %+v want %+v", gotRecords, expectedRecords)
+				if !reflect.DeepEqual(gotResult, expectedResult) {
+					t.Errorf("handler returned unexpected body: got %+v want %+v", gotResult, expectedResult)
 				}
 
 			}

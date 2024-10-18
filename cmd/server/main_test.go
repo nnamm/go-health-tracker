@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			healthHandler.GetHealthRecord(w, r)
+			healthHandler.GetHealthRecords(w, r)
 		case http.MethodPost:
 			healthHandler.CreateHealthRecord(w, r)
 		case http.MethodPut:
