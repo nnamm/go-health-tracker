@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -67,24 +68,6 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(hr)
 }
-
-// // GetHealthRecord retrieves a single health record for a specified date
-// func (h *HealthRecordHandler) GetHealthRecord(w http.ResponseWriter, r *http.Request) {
-// 	dateStr := r.URL.Query().Get("date")
-// 	date, err := time.Parse("2006-01-02", dateStr)
-// 	if err != nil {
-// 		http.Error(w, "Invalid date format. Use YYYY-MM-DD", http.StatusBadRequest)
-// 		return
-// 	}
-//
-// 	hr, err := h.DB.ReadHealthRecord(date)
-// 	if err != nil {
-// 		http.Error(w, err.Error(), http.StatusNotFound)
-// 		return
-// 	}
-//
-// 	json.NewEncoder(w).Encode(hr)
-// }
 
 // GetHealthRecords retrieves record(s) for the specified date (year, month. date)
 func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +177,8 @@ func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models
 
 // handleError processes errors and sends appropriate responses
 func (h *HealthRecordHandler) handleError(w http.ResponseWriter, err error) {
-	if appErr, ok := err.(apperrros.AppError); ok {
+	var appErr apperrros.AppError
+	if errors.As(err, &appErr) {
 		switch appErr.Type {
 		case apperrros.ErrorTypeInvalidDate, apperrros.ErrorTypeInvalidYear, apperrros.ErrorTypeInvalidMonth, apperrros.ErrorTypeInvalidFormat:
 			h.sendErrorResponse(w, appErr, http.StatusBadRequest)
