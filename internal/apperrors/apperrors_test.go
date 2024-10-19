@@ -1,4 +1,4 @@
-package apperrros
+package apperrors
 
 import "testing"
 
