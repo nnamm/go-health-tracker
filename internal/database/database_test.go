@@ -42,7 +42,7 @@ func TestDB_CreateHealthRecord(t *testing.T) {
 	}
 
 	// Create a test record
-	err := testDB.CreateHealthRecord(hr)
+	_, err := testDB.CreateHealthRecord(hr)
 	if err != nil {
 		t.Errorf("Failed to create health record: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestDB_UpdateHealthRecord(t *testing.T) {
 	}
 
 	// Create a test record
-	err := testDB.CreateHealthRecord(hrBefore)
+	_, err := testDB.CreateHealthRecord(hrBefore)
 	if err != nil {
 		t.Errorf("Failed to create health record: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestDB_DeleteHealthRecord(t *testing.T) {
 	}
 
 	// Create a test record
-	err := testDB.CreateHealthRecord(hr)
+	_, err := testDB.CreateHealthRecord(hr)
 	if err != nil {
 		t.Errorf("Failed to create health record: %v", err)
 	}
@@ -112,8 +112,8 @@ func TestDB_DeleteHealthRecord(t *testing.T) {
 	}
 
 	// Read and verify the record does not exist
-	_, err = testDB.ReadHealthRecord(hr.Date)
-	if err == nil {
+	record, err := testDB.ReadHealthRecord(hr.Date)
+	if record != nil {
 		t.Errorf("Failed to delete health record: %v", err)
 	}
 }

@@ -13,7 +13,7 @@ type DB struct {
 }
 
 type DBInterface interface {
-	CreateHealthRecord(hr *models.HealthRecord) error
+	CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord, error)
 	ReadHealthRecord(date time.Time) (*models.HealthRecord, error)
 	ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error)
 	ReadHealthRecordsByYearMonth(year, month int) ([]models.HealthRecord, error)
@@ -47,11 +47,28 @@ func (db *DB) CreateTable() error {
 }
 
 // CreateHealthRecord inserts a new record
-func (db *DB) CreateHealthRecord(hr *models.HealthRecord) error {
+func (db *DB) CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord, error) {
 	query := `INSERT INTO health_records (date, step_count, created_at, updated_at) VALUES (?, ?, ?, ?)`
 	now := time.Now()
-	_, err := db.Exec(query, hr.Date, hr.StepCount, now, now)
-	return err
+	result, err := db.Exec(query, hr.Date, hr.StepCount, now, now)
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	createdRecord := &models.HealthRecord{
+		ID:        id,
+		Date:      hr.Date,
+		StepCount: hr.StepCount,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	return createdRecord, err
 }
 
 // ReadHealthRecord retrieves a health record by date
