@@ -106,8 +106,11 @@ func (db *DB) ReadHealthRecord(date time.Time) (*models.HealthRecord, error) {
 
 // ReadHealthRecordsByYear retrieves record(s) by year
 func (db *DB) ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error) {
-	query := `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE strftime('%Y', date) = ?`
-	rows, err := db.Query(query, year)
+	startDate := time.Date(year, time.Month(1), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(1, 0, 0)
+
+	query := `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE date >= ? AND date < ? ORDER BY date`
+	rows, err := db.Query(query, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
