@@ -270,8 +270,5 @@ func assertHealthRecordsEqual(t *testing.T, got, want []models.HealthRecord) {
 		if got[i].StepCount != want[i].StepCount {
 			t.Errorf("StepCount = %v, want %v", got[i].StepCount, want[i].StepCount)
 		}
-		// if !reflect.DeepEqual(got[i], want[i]) {
-		// 	t.Errorf("record[%d]:\ngot %+v\nwant %+v", i, got[i], want[i])
-		// }
 	}
 }
