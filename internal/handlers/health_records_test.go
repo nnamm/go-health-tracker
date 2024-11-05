@@ -2,34 +2,63 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/nnamm/go-health-tracker/internal/models"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type mockDB struct{}
+type mockDB struct {
+	records map[time.Time]*models.HealthRecord
+}
+
+func newMockDB() *mockDB {
+	return &mockDB{
+		records: make(map[time.Time]*models.HealthRecord),
+	}
+}
 
 var (
-	fixedTime0710 = time.Date(2024, 7, 10, 0, 0, 0, 0, time.UTC)
-	fixedTime0811 = time.Date(2024, 8, 11, 0, 0, 0, 0, time.UTC)
-	fixedTime0812 = time.Date(2024, 8, 12, 0, 0, 0, 0, time.UTC)
+	fixedDateTime     = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	date0710          = time.Date(2024, 7, 10, 0, 0, 0, 0, time.UTC)
+	date0811          = time.Date(2024, 8, 11, 0, 0, 0, 0, time.UTC)
+	date0812          = time.Date(2024, 8, 12, 0, 0, 0, 0, time.UTC)
+	fixedDateTime0710 = time.Date(2024, 7, 10, 0, 0, 0, 0, time.UTC)
+	fixedDateTime0811 = time.Date(2024, 8, 11, 0, 0, 0, 0, time.UTC)
+	fixedDateTime0812 = time.Date(2024, 8, 12, 0, 0, 0, 0, time.UTC)
 )
 
-func (m *mockDB) CreateHealthRecord(hr *models.HealthRecord) error {
-	return nil
+func (m *mockDB) CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord, error) {
+	if hr.Date.IsZero() {
+		return nil, fmt.Errorf("date is required")
+	}
+
+	record := &models.HealthRecord{
+		ID:        1,
+		Date:      hr.Date,
+		StepCount: hr.StepCount,
+		CreatedAt: fixedDateTime,
+		UpdatedAt: fixedDateTime,
+	}
+
+	m.records[hr.Date] = record
+	return record, nil
 }
 
 func (m *mockDB) ReadHealthRecord(date time.Time) (*models.HealthRecord, error) {
 	return &models.HealthRecord{
 		ID:        1,
-		Date:      date,
+		Date:      date0710,
 		StepCount: 10000,
-		CreatedAt: fixedTime0710,
-		UpdatedAt: fixedTime0710,
+		CreatedAt: fixedDateTime0710,
+		UpdatedAt: fixedDateTime0710,
 	}, nil
 }
 
@@ -37,24 +66,24 @@ func (m *mockDB) ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error
 	return []models.HealthRecord{
 		{
 			ID:        1,
-			Date:      time.Date(year, 7, 10, 0, 0, 0, 0, time.UTC),
+			Date:      date0710,
 			StepCount: 10000,
-			CreatedAt: fixedTime0710,
-			UpdatedAt: fixedTime0710,
+			CreatedAt: fixedDateTime0710,
+			UpdatedAt: fixedDateTime0710,
 		},
 		{
 			ID:        2,
-			Date:      time.Date(year, 8, 11, 0, 0, 0, 0, time.UTC),
+			Date:      date0811,
 			StepCount: 11000,
-			CreatedAt: fixedTime0811,
-			UpdatedAt: fixedTime0811,
+			CreatedAt: fixedDateTime0811,
+			UpdatedAt: fixedDateTime0811,
 		},
 		{
 			ID:        3,
-			Date:      time.Date(year, 8, 12, 0, 0, 0, 0, time.UTC),
+			Date:      date0812,
 			StepCount: 12000,
-			CreatedAt: fixedTime0812,
-			UpdatedAt: fixedTime0812,
+			CreatedAt: fixedDateTime0812,
+			UpdatedAt: fixedDateTime0812,
 		},
 	}, nil
 }
@@ -63,17 +92,17 @@ func (m *mockDB) ReadHealthRecordsByYearMonth(year, month int) ([]models.HealthR
 	return []models.HealthRecord{
 		{
 			ID:        2,
-			Date:      time.Date(year, 8, 11, 0, 0, 0, 0, time.UTC),
+			Date:      date0811,
 			StepCount: 11000,
-			CreatedAt: fixedTime0811,
-			UpdatedAt: fixedTime0811,
+			CreatedAt: fixedDateTime0811,
+			UpdatedAt: fixedDateTime0811,
 		},
 		{
 			ID:        3,
-			Date:      time.Date(year, 8, 12, 0, 0, 0, 0, time.UTC),
+			Date:      date0812,
 			StepCount: 12000,
-			CreatedAt: fixedTime0812,
-			UpdatedAt: fixedTime0812,
+			CreatedAt: fixedDateTime0812,
+			UpdatedAt: fixedDateTime0812,
 		},
 	}, nil
 }
@@ -88,52 +117,87 @@ func (m *mockDB) DeleteHealthRecord(date time.Time) error {
 	return nil
 }
 
-// func TestCreateHealthRecord(t *testing.T) {
-// 	handler := NewHealthRecordHandler(&mockDB{})
-//
-// 	tests := []struct {
-// 		name           string
-// 		requestBody    string
-// 		expectedStatus int
-// 	}{
-// 		{
-// 			name:           "Valid request",
-// 			requestBody:    `{"date": "2023-08-11", "step_count": 10000}`,
-// 			expectedStatus: http.StatusCreated,
-// 		},
-// 		{
-// 			name:           "Empty request body",
-// 			requestBody:    "",
-// 			expectedStatus: http.StatusBadRequest,
-// 		},
-// 		{
-// 			name:           "Invalid JSON",
-// 			requestBody:    `{"date": "2023-08-11", "step_count": "Invalid"}`,
-// 			expectedStatus: http.StatusBadRequest,
-// 		},
-// 		{
-// 			name:           "Invalid date",
-// 			requestBody:    `{"date": "invalid-date", "step_count": 10000}`,
-// 			expectedStatus: http.StatusBadRequest,
-// 		},
-// 	}
-//
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			req, err := http.NewRequest(http.MethodPost, "/health", bytes.NewBufferString(tt.requestBody))
-// 			if err != nil {
-// 				t.Fatal(err)
-// 			}
-//
-// 			rr := httptest.NewRecorder()
-// 			handler.CreateHealthRecord(rr, req)
-//
-// 			if status := rr.Code; status != tt.expectedStatus {
-// 				t.Errorf("handler returned wrong status code: got %v want %v", status, tt.expectedStatus)
-// 			}
-// 		})
-// 	}
-// }
+func TestCreateHealthRecord(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestBody    string
+		expectedStatus int
+		wantError      bool
+		errorMessage   string
+		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
+	}{
+		{
+			name:           "valid request",
+			requestBody:    `{"date": "2024-07-10", "step_count": 10000}`,
+			expectedStatus: http.StatusCreated,
+			checkResponse: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				var result HealthRecordResult
+				err := json.Unmarshal(rr.Body.Bytes(), &result)
+				require.NoError(t, err)
+				require.Len(t, result.Records, 1)
+
+				record := result.Records[0]
+				assert.Equal(t, "2024-07-10", record.Date.Format("2006-01-02"))
+				assert.Equal(t, 10000, record.StepCount)
+				assert.Equal(t, int64(1), record.ID)
+
+				// CreatedAt/UpdatedAt confirms only that the value exist
+				assert.False(t, record.CreatedAt.IsZero())
+				assert.False(t, record.UpdatedAt.IsZero())
+			},
+		},
+		{
+			name:           "empty request body",
+			requestBody:    "",
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "failed to unmarshal health record",
+		},
+		{
+			name:           "invalid json",
+			requestBody:    `{"date": "2024-01-01", "step_count": "Invalid"}`,
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "failed to unmarshal health record",
+		},
+		{
+			name:           "missing date",
+			requestBody:    `{"step_count": 10000}`,
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "unexpected date type",
+		},
+		{
+			name:           "zero date",
+			requestBody:    `{"date": "0001-01-01", "step_count": 10000}`,
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "date is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewHealthRecordHandler(newMockDB())
+
+			req := httptest.NewRequest(http.MethodPost, "/health/records", strings.NewReader(tt.requestBody))
+			rr := httptest.NewRecorder()
+
+			handler.CreateHealthRecord(rr, req)
+
+			assert.Equal(t, tt.expectedStatus, rr.Code)
+
+			if tt.wantError {
+				var errResponse map[string]string
+				err := json.Unmarshal(rr.Body.Bytes(), &errResponse)
+				require.NoError(t, err)
+				assert.Contains(t, errResponse["error"], tt.errorMessage)
+			} else if tt.checkResponse != nil {
+				tt.checkResponse(t, rr)
+			}
+		})
+	}
+}
 
 func TestGetHealthRecords(t *testing.T) {
 	mockDB := &mockDB{}
@@ -250,73 +314,3 @@ func TestGetHealthRecords(t *testing.T) {
 		})
 	}
 }
-
-// func TestReadHealthRecord(t *testing.T) {
-// 	handler := NewHealthRecordHandler(&mockDB{})
-//
-// 	tests := []struct {
-// 		name           string
-// 		queryDate      string
-// 		expectedStatus int
-// 	}{
-// 		{
-// 			name:           "Valid date",
-// 			queryDate:      "2023-08-11",
-// 			expectedStatus: http.StatusOK,
-// 		},
-// 		{
-// 			name:           "Invalid date format",
-// 			queryDate:      "2023/08/11",
-// 			expectedStatus: http.StatusBadRequest,
-// 		},
-// 	}
-//
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			req, err := http.NewRequest(http.MethodGet, "/health?date="+tt.queryDate, nil)
-// 			if err != nil {
-// 				t.Fatal(err)
-// 			}
-//
-// 			rr := httptest.NewRecorder()
-// 			handler.GetHealthRecord(rr, req)
-//
-// 			if status := rr.Code; status != tt.expectedStatus {
-// 				t.Errorf("handler returned wrong status code: got %v want %v", status, tt.expectedStatus)
-// 			}
-// 		})
-// 	}
-// }
-
-// func TestUpdateHealthRecord(t *testing.T) {
-// 	handler := NewHealthRecordHandler(&mockDB{})
-//
-// 	validBody := `{"date": "2023-08-11", "step_count": 12000}`
-// 	req, err := http.NewRequest(http.MethodPut, "/health", bytes.NewBufferString(validBody))
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	rr := httptest.NewRecorder()
-// 	handler.UpdateHealthRecord(rr, req)
-//
-// 	if status := rr.Code; status != http.StatusOK {
-// 		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-// 	}
-// }
-
-// func TestDeleteHealthRecord(t *testing.T) {
-// 	handler := NewHealthRecordHandler(&mockDB{})
-//
-// 	req, err := http.NewRequest(http.MethodDelete, "/health?date=2023-08-11", nil)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	rr := httptest.NewRecorder()
-// 	handler.DeleteHealthRecord(rr, req)
-//
-// 	if status := rr.Code; status != http.StatusNoContent {
-// 		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusNoContent)
-// 	}
-// }

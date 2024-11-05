@@ -1,8 +1,9 @@
-package apperrors
+package apperr
 
 type ErrorType string
 
 const (
+	ErrorTypeBadRequest     ErrorType = "BadRequest"
 	ErrorTypeInvalidDate    ErrorType = "InvalidDate"
 	ErrorTypeInvalidYear    ErrorType = "InvalidYear"
 	ErrorTypeInvalidMonth   ErrorType = "InvalidMonth"

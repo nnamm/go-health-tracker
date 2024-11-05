@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
-	"github.com/nnamm/go-health-tracker/internal/apperrors"
+	"github.com/nnamm/go-health-tracker/internal/apperr"
 	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
@@ -32,41 +31,31 @@ func NewHealthRecordHandler(db database.DBInterface) *HealthRecordHandler {
 func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("Error reading request body: %v", err)
-		http.Error(w, "Error reading request body", http.StatusBadRequest)
-		return
-	}
-	log.Printf("Received request body: %s", string(body))
-
-	if len(body) == 0 {
-		log.Print("Empty request body received")
-		http.Error(w, "Empty request body", http.StatusBadRequest)
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to read request body: "+err.Error()))
 		return
 	}
 
 	var hr models.HealthRecord
-	if err = json.Unmarshal(body, &hr); err != nil {
-		log.Printf("Error unmarshaling JSON: %v", err)
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+	if err = hr.UnmarshalJSON(body); err != nil {
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidFormat, err.Error()))
 		return
 	}
-
-	log.Printf("Parsed HealthRecord: %+v", hr)
 
 	if hr.Date.IsZero() {
-		log.Print("Invalid date: zero value")
-		http.Error(w, "Invalid date", http.StatusBadRequest)
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidDate, "date is required"))
 		return
 	}
 
-	if err := h.DB.CreateHealthRecord(&hr); err != nil {
-		log.Printf("Error creating health record: %v", err)
-		http.Error(w, "Failed to create health record: "+err.Error(), http.StatusInternalServerError)
+	createdRecord, err := h.DB.CreateHealthRecord(&hr)
+	if err != nil {
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(hr)
+	result := HealthRecordResult{
+		Records: []models.HealthRecord{*createdRecord},
+	}
+	h.sendJSONResponse(w, result, http.StatusCreated)
 }
 
 // GetHealthRecords retrieves record(s) for the specified date (year, month. date)
@@ -85,7 +74,7 @@ func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Re
 	case query.Get("year") != "":
 		result.Records, err = h.getByYearMonth(query.Get("year"), query.Get("month"))
 	default:
-		h.sendErrorResponse(w, apperrors.NewAppError(apperrors.ErrorTypeInvalidFormat, "Invalid query parameters: expected date or year"), http.StatusBadRequest)
+		h.sendErrorResponse(w, apperr.NewAppError(apperr.ErrorTypeInvalidFormat, "Invalid query parameters: expected date or year"), http.StatusBadRequest)
 		return
 	}
 
@@ -94,7 +83,7 @@ func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	h.sendJSONResponse(w, result)
+	h.sendJSONResponse(w, result, http.StatusOK)
 }
 
 // UpdateHealthRecord handles the update of an existing health record
@@ -134,15 +123,15 @@ func (h *HealthRecordHandler) DeleteHealthRecord(w http.ResponseWriter, r *http.
 func (h *HealthRecordHandler) getByDate(dateStr string) (*models.HealthRecord, error) {
 	date, err := time.Parse("20060102", dateStr)
 	if err != nil {
-		return nil, apperrors.NewAppError(apperrors.ErrorTypeInvalidDate, "Invalid date format: "+dateStr+" (Use YYYYMMDD)")
+		return nil, apperr.NewAppError(apperr.ErrorTypeInvalidDate, "Invalid date format: "+dateStr+" (Use YYYYMMDD)")
 	}
 
 	record, err := h.DB.ReadHealthRecord(date)
 	if err != nil {
-		return nil, apperrors.NewAppError(apperrors.ErrorTypeInternalServer, "Failed to read health record: "+err.Error())
+		return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "Failed to read health record: "+err.Error())
 	}
 	if record == nil {
-		return nil, apperrors.NewAppError(apperrors.ErrorTypeNotFound, "Unexpected: Health record not found for date: "+dateStr)
+		return nil, apperr.NewAppError(apperr.ErrorTypeNotFound, "Unexpected: Health record not found for date: "+dateStr)
 	}
 
 	return record, nil
@@ -152,24 +141,24 @@ func (h *HealthRecordHandler) getByDate(dateStr string) (*models.HealthRecord, e
 func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models.HealthRecord, error) {
 	year, err := time.Parse("2006", yearStr)
 	if err != nil {
-		return nil, apperrors.NewAppError(apperrors.ErrorTypeInvalidYear, "Invalid year format: "+yearStr+" (Use YYYY)")
+		return nil, apperr.NewAppError(apperr.ErrorTypeInvalidYear, "Invalid year format: "+yearStr+" (Use YYYY)")
 	}
 
 	if monthStr == "" {
 		records, err := h.DB.ReadHealthRecordsByYear(year.Year())
 		if err != nil {
-			return nil, apperrors.NewAppError(apperrors.ErrorTypeInternalServer, "Failed to read health records: "+err.Error())
+			return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "Failed to read health records: "+err.Error())
 		}
 		return records, nil
 	}
 
 	month, err := time.Parse("01", monthStr)
 	if err != nil {
-		return nil, apperrors.NewAppError(apperrors.ErrorTypeInvalidMonth, "Invalid month format: "+monthStr+" (Use MM)")
+		return nil, apperr.NewAppError(apperr.ErrorTypeInvalidMonth, "Invalid month format: "+monthStr+" (Use MM)")
 	}
 	records, err := h.DB.ReadHealthRecordsByYearMonth(year.Year(), int(month.Month()))
 	if err != nil {
-		return nil, apperrors.NewAppError(apperrors.ErrorTypeInternalServer, "Failed to read  health records: "+err.Error())
+		return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "Failed to read  health records: "+err.Error())
 	}
 
 	return records, nil
@@ -177,31 +166,32 @@ func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models
 
 // handleError processes errors and sends appropriate responses
 func (h *HealthRecordHandler) handleError(w http.ResponseWriter, err error) {
-	var appErr apperrors.AppError
+	var appErr apperr.AppError
 	if errors.As(err, &appErr) {
 		switch appErr.Type {
-		case apperrors.ErrorTypeInvalidDate, apperrors.ErrorTypeInvalidYear, apperrors.ErrorTypeInvalidMonth, apperrors.ErrorTypeInvalidFormat:
+		case apperr.ErrorTypeInvalidDate, apperr.ErrorTypeInvalidYear, apperr.ErrorTypeInvalidMonth, apperr.ErrorTypeInvalidFormat:
 			h.sendErrorResponse(w, appErr, http.StatusBadRequest)
-		case apperrors.ErrorTypeNotFound:
+		case apperr.ErrorTypeNotFound:
 			h.sendErrorResponse(w, appErr, http.StatusNotFound)
 		default:
 			h.sendErrorResponse(w, appErr, http.StatusInternalServerError)
 		}
 	} else {
-		h.sendErrorResponse(w, apperrors.NewAppError(apperrors.ErrorTypeInternalServer, err.Error()), http.StatusInternalServerError)
+		h.sendErrorResponse(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, err.Error()), http.StatusInternalServerError)
 	}
 }
 
 // sendJSONResponse sends a JSON response
-func (h *HealthRecordHandler) sendJSONResponse(w http.ResponseWriter, data HealthRecordResult) {
+func (h *HealthRecordHandler) sendJSONResponse(w http.ResponseWriter, data HealthRecordResult, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		h.sendErrorResponse(w, apperrors.NewAppError(apperrors.ErrorTypeInternalServer, "Failed to encode response"), http.StatusInternalServerError)
+		h.sendErrorResponse(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to encode response"), http.StatusInternalServerError)
 	}
 }
 
 // sendErrorResponse sends an error response
-func (h *HealthRecordHandler) sendErrorResponse(w http.ResponseWriter, err apperrors.AppError, statusCode int) {
+func (h *HealthRecordHandler) sendErrorResponse(w http.ResponseWriter, err apperr.AppError, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
