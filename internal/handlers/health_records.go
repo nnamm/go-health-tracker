@@ -10,21 +10,26 @@ import (
 	"github.com/nnamm/go-health-tracker/internal/apperr"
 	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/internal/models"
+	"github.com/nnamm/go-health-tracker/internal/validators"
 )
 
 // HealthRecordHandler handles HTTP requests for health records
 type HealthRecordHandler struct {
-	DB database.DBInterface
+	DB        database.DBInterface
+	validator validators.HealthRecordValidator
+}
+
+// NewHealthRecordHandler creates a new NewHealthRecordHandler
+func NewHealthRecordHandler(db database.DBInterface) *HealthRecordHandler {
+	return &HealthRecordHandler{
+		DB:        db,
+		validator: validators.NewHealthRecordValidator(),
+	}
 }
 
 // HealthRecordResult represents the response structure for health records
 type HealthRecordResult struct {
 	Records []models.HealthRecord `json:"records"`
-}
-
-// NewHealthRecordHandler creates a new NewHealthRecordHandler
-func NewHealthRecordHandler(db database.DBInterface) *HealthRecordHandler {
-	return &HealthRecordHandler{DB: db}
 }
 
 // CreateHealthRecord handles the creation of a new health record
@@ -41,8 +46,8 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if hr.Date.IsZero() {
-		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidDate, "date is required"))
+	if err = h.validator.Validate(&hr); err != nil {
+		h.handleError(w, err)
 		return
 	}
 

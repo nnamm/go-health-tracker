@@ -174,6 +174,13 @@ func TestCreateHealthRecord(t *testing.T) {
 			wantError:      true,
 			errorMessage:   "date is required",
 		},
+		{
+			name:           "step count is negative",
+			requestBody:    `{"date": "2024-01-01", "step_count": -5000}`,
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "step count must not be negative",
+		},
 	}
 
 	for _, tt := range tests {
