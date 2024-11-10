@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +17,14 @@ import (
 )
 
 type mockDB struct {
-	records map[time.Time]*models.HealthRecord
+	mu            sync.RWMutex
+	records       map[time.Time]*models.HealthRecord
+	createFunc    func(*models.HealthRecord) (*models.HealthRecord, error)
+	readFunc      func(time.Time) (*models.HealthRecord, error)
+	readYearFunc  func(int) ([]models.HealthRecord, error)
+	readMonthFunc func(int, int) ([]models.HealthRecord, error)
+	updateFunc    func(*models.HealthRecord) error
+	deleteFunc    func(time.Time) error
 }
 
 func newMockDB() *mockDB {
@@ -26,7 +34,6 @@ func newMockDB() *mockDB {
 }
 
 var (
-	fixedDateTime     = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	date0710          = time.Date(2024, 7, 10, 0, 0, 0, 0, time.UTC)
 	date0811          = time.Date(2024, 8, 11, 0, 0, 0, 0, time.UTC)
 	date0812          = time.Date(2024, 8, 12, 0, 0, 0, 0, time.UTC)
@@ -36,16 +43,27 @@ var (
 )
 
 func (m *mockDB) CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.createFunc != nil {
+		return m.createFunc(hr)
+	}
+
 	if hr.Date.IsZero() {
 		return nil, fmt.Errorf("date is required")
 	}
 
+	if _, exists := m.records[hr.Date]; exists {
+		return nil, fmt.Errorf("record already exists for date: %v", hr.Date)
+	}
+
 	record := &models.HealthRecord{
-		ID:        1,
+		ID:        int64(len(m.records) + 1),
 		Date:      hr.Date,
 		StepCount: hr.StepCount,
-		CreatedAt: fixedDateTime,
-		UpdatedAt: fixedDateTime,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	m.records[hr.Date] = record
@@ -120,6 +138,7 @@ func (m *mockDB) DeleteHealthRecord(date time.Time) error {
 func TestCreateHealthRecord(t *testing.T) {
 	tests := []struct {
 		name           string
+		setupMock      func(*mockDB)
 		requestBody    string
 		expectedStatus int
 		wantError      bool
@@ -127,8 +146,19 @@ func TestCreateHealthRecord(t *testing.T) {
 		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		{
-			name:           "valid request",
-			requestBody:    `{"date": "2024-07-10", "step_count": 10000}`,
+			name: "successful creation",
+			setupMock: func(db *mockDB) {
+				db.createFunc = func(hr *models.HealthRecord) (*models.HealthRecord, error) {
+					return &models.HealthRecord{
+						ID:        1,
+						Date:      hr.Date,
+						StepCount: hr.StepCount,
+						CreatedAt: time.Now(),
+						UpdatedAt: time.Now(),
+					}, nil
+				}
+			},
+			requestBody:    `{"date": "2024-07-10", "step_count":10000}`,
 			expectedStatus: http.StatusCreated,
 			checkResponse: func(t *testing.T, rr *httptest.ResponseRecorder) {
 				var result HealthRecordResult
@@ -137,14 +167,22 @@ func TestCreateHealthRecord(t *testing.T) {
 				require.Len(t, result.Records, 1)
 
 				record := result.Records[0]
-				assert.Equal(t, "2024-07-10", record.Date.Format("2006-01-02"))
-				assert.Equal(t, 10000, record.StepCount)
 				assert.Equal(t, int64(1), record.ID)
-
-				// CreatedAt/UpdatedAt confirms only that the value exist
-				assert.False(t, record.CreatedAt.IsZero())
-				assert.False(t, record.UpdatedAt.IsZero())
+				assert.Equal(t, 10000, record.StepCount)
+				assert.Equal(t, "2024-07-10", record.Date.Format("2006-01-02"))
 			},
+		},
+		{
+			name: "database error",
+			setupMock: func(db *mockDB) {
+				db.createFunc = func(hr *models.HealthRecord) (*models.HealthRecord, error) {
+					return nil, fmt.Errorf("database connection failed")
+				}
+			},
+			requestBody:    `{"date": "2024-07-10", "step_count":10000}`,
+			expectedStatus: http.StatusInternalServerError,
+			wantError:      true,
+			errorMessage:   "failed to create health record: database connection failed",
 		},
 		{
 			name:           "empty request body",
@@ -185,8 +223,12 @@ func TestCreateHealthRecord(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewHealthRecordHandler(newMockDB())
+			mockDB := newMockDB()
+			if tt.setupMock != nil {
+				tt.setupMock(mockDB)
+			}
 
+			handler := NewHealthRecordHandler(mockDB)
 			req := httptest.NewRequest(http.MethodPost, "/health/records", strings.NewReader(tt.requestBody))
 			rr := httptest.NewRecorder()
 
