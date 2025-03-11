@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/nnamm/go-health-tracker/internal/apperr"
+	"github.com/nnamm/go-health-tracker/internal/config"
 	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/internal/models"
 	"github.com/nnamm/go-health-tracker/internal/validators"
@@ -34,33 +37,68 @@ type HealthRecordResult struct {
 
 // CreateHealthRecord handles the creation of a new health record
 func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to read request body: "+err.Error()))
-		return
-	}
+	// set a timeout for the request context
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(config.RequestTimeoutSecond)*time.Second)
+	defer cancel()
 
-	var hr models.HealthRecord
-	if err = hr.UnmarshalJSON(body); err != nil {
-		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidFormat, err.Error()))
-		return
-	}
+	// Create a new request with original request's context
+	r = r.WithContext(ctx)
 
-	if err = h.validator.Validate(&hr); err != nil {
-		h.handleError(w, err)
-		return
-	}
+	// Limit the request body size to 8KB
+	r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
 
-	createdRecord, err := h.DB.CreateHealthRecord(&hr)
-	if err != nil {
-		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
-		return
-	}
+	// Create channels to handle the request body and errors for async processing
+	bodyCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
 
-	result := HealthRecordResult{
-		Records: []models.HealthRecord{*createdRecord},
+	go func() {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		bodyCh <- body
+	}()
+
+	// Check if the request has been cancelled or timed out
+	select {
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "request processing timed out"))
+		} else {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "request was cancelled"))
+		}
+		return
+	case err := <-errCh:
+		if err.Error() == "http: request body too large" {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeBadRequest, "request body too large"))
+		} else {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to read request body"))
+		}
+		return
+	case body := <-bodyCh:
+		var hr models.HealthRecord
+		if err := hr.UnmarshalJSON(body); err != nil {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidFormat, err.Error()))
+			return
+		}
+
+		if err := h.validator.Validate(&hr); err != nil {
+			h.handleError(w, err)
+			return
+		}
+
+		createdRecord, err := h.DB.CreateHealthRecordWithContext(ctx, &hr)
+		if err != nil {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
+			return
+		}
+
+		result := HealthRecordResult{
+			Records: []models.HealthRecord{*createdRecord},
+		}
+		h.sendJSONResponse(w, result, http.StatusCreated)
 	}
-	h.sendJSONResponse(w, result, http.StatusCreated)
 }
 
 // GetHealthRecords retrieves record(s) for the specified date (year, month. date)
@@ -173,16 +211,31 @@ func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models
 func (h *HealthRecordHandler) handleError(w http.ResponseWriter, err error) {
 	var appErr apperr.AppError
 	if errors.As(err, &appErr) {
-		switch appErr.Type {
-		case apperr.ErrorTypeInvalidDate, apperr.ErrorTypeInvalidYear, apperr.ErrorTypeInvalidMonth, apperr.ErrorTypeInvalidFormat:
-			h.sendErrorResponse(w, appErr, http.StatusBadRequest)
-		case apperr.ErrorTypeNotFound:
-			h.sendErrorResponse(w, appErr, http.StatusNotFound)
-		default:
-			h.sendErrorResponse(w, appErr, http.StatusInternalServerError)
+
+		log.Printf("application error: %v, Type: %s", appErr, appErr.Type)
+
+		clientMessage := appErr.Error()
+
+		if !config.IsDevelopment && appErr.Type == apperr.ErrorTypeInternalServer {
+			clientMessage = "an internal server error occurred"
 		}
+
+		statusCode := http.StatusInternalServerError
+		switch appErr.Type {
+		case apperr.ErrorTypeInvalidDate, apperr.ErrorTypeInvalidYear, apperr.ErrorTypeInvalidMonth, apperr.ErrorTypeInvalidFormat, apperr.ErrorTypeBadRequest:
+			statusCode = http.StatusBadRequest
+		case apperr.ErrorTypeNotFound:
+			statusCode = http.StatusNotFound
+		}
+
+		h.sendErrorResponse(w, apperr.AppError{Type: appErr.Type, Message: clientMessage}, statusCode)
 	} else {
-		h.sendErrorResponse(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, err.Error()), http.StatusInternalServerError)
+		log.Printf("unhandled error: %v", err)
+		message := "an unexpected error occurred"
+		if config.IsDevelopment {
+			message = err.Error()
+		}
+		h.sendErrorResponse(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, message), http.StatusInternalServerError)
 	}
 }
 

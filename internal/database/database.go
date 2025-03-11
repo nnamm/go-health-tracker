@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -15,6 +16,7 @@ type DB struct {
 
 type DBInterface interface {
 	CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord, error)
+	CreateHealthRecordWithContext(ctx context.Context, hr *models.HealthRecord) (*models.HealthRecord, error)
 	ReadHealthRecord(date time.Time) (*models.HealthRecord, error)
 	ReadHealthRecordsByYear(year int) ([]models.HealthRecord, error)
 	ReadHealthRecordsByYearMonth(year, month int) ([]models.HealthRecord, error)
@@ -87,6 +89,75 @@ func (db *DB) CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord,
 	}
 
 	return createdRecord, nil
+}
+
+// createHealthRecordWithContext inserts a new record with a context
+func (db *DB) CreateHealthRecordWithContext(ctx context.Context, hr *models.HealthRecord) (*models.HealthRecord, error) {
+	var createdRecord *models.HealthRecord
+
+	err := db.withTxContext(ctx, func(tx *sql.Tx) error {
+		query := `INSERT INTO health_records (date, step_count, created_at, updated_at) VALUES (?, ?, ?, ?)`
+		now := time.Now()
+
+		result, err := tx.ExecContext(ctx, query, hr.Date, hr.StepCount, now, now)
+		if err != nil {
+			return fmt.Errorf("insert record: %w", err)
+		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("get last insert id: %w", err)
+		}
+
+		createdRecord = &models.HealthRecord{
+			ID:        id,
+			Date:      hr.Date,
+			StepCount: hr.StepCount,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return createdRecord, nil
+}
+
+// withTxContext executes a function with a transaction and context
+func (db *DB) withTxContext(ctx context.Context, fn func(*sql.Tx) error) error {
+	// Start a transaction for the context
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transactin: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p)
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("rollback failed: %v (original error: %w)", rbErr, err)
+		}
+		return err
+	}
+
+	// Rollback if the context is canceled
+	if ctx.Err() != nil {
+		tx.Rollback()
+		return ctx.Err()
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
 
 // ReadHealthRecord retrieves a health record by date
