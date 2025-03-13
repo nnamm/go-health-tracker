@@ -1,6 +1,8 @@
 package validators
 
 import (
+	"time"
+
 	"github.com/nnamm/go-health-tracker/internal/apperr"
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
@@ -26,6 +28,15 @@ func (v *DefaultHealthRecordValidator) Validate(hr *models.HealthRecord) error {
 
 	if hr.StepCount < 0 {
 		return apperr.NewAppError(apperr.ErrorTypeInvalidFormat, "step count must not be negative")
+	}
+
+	if hr.StepCount > 1000000 {
+		return apperr.NewAppError(apperr.ErrorTypeInvalidFormat, "step count is unrealistically high")
+	}
+
+	now := time.Now()
+	if hr.Date.After(now) {
+		return apperr.NewAppError(apperr.ErrorTypeInvalidDate, "future dates are not allowed")
 	}
 
 	return nil
