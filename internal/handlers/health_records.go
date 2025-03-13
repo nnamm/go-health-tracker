@@ -88,7 +88,7 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 			return
 		}
 
-		createdRecord, err := h.DB.CreateHealthRecordWithContext(ctx, &hr)
+		createdRecord, err := h.DB.CreateHealthRecord(ctx, &hr)
 		if err != nil {
 			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
 			return
@@ -103,6 +103,10 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 
 // GetHealthRecords retrieves record(s) for the specified date (year, month. date)
 func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Request) {
+	// set a timeout for the request context
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(config.RequestTimeoutSecond)*time.Second)
+	defer cancel()
+
 	query := r.URL.Query()
 	var result HealthRecordResult
 	var err error
@@ -110,12 +114,12 @@ func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Re
 	switch {
 	case query.Get("date") != "":
 		var record *models.HealthRecord
-		record, err = h.getByDate(query.Get("date"))
+		record, err = h.getByDate(ctx, query.Get("date"))
 		if record != nil {
 			result.Records = []models.HealthRecord{*record}
 		}
 	case query.Get("year") != "":
-		result.Records, err = h.getByYearMonth(query.Get("year"), query.Get("month"))
+		result.Records, err = h.getByYearMonth(ctx, query.Get("year"), query.Get("month"))
 	default:
 		h.sendErrorResponse(w, apperr.NewAppError(apperr.ErrorTypeInvalidFormat, "Invalid query parameters: expected date or year"), http.StatusBadRequest)
 		return
@@ -163,13 +167,13 @@ func (h *HealthRecordHandler) DeleteHealthRecord(w http.ResponseWriter, r *http.
 }
 
 // getByDate retrieves a record for the specified date (YYYYMMDD)
-func (h *HealthRecordHandler) getByDate(dateStr string) (*models.HealthRecord, error) {
+func (h *HealthRecordHandler) getByDate(ctx context.Context, dateStr string) (*models.HealthRecord, error) {
 	date, err := time.Parse("20060102", dateStr)
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.ErrorTypeInvalidDate, "Invalid date format: "+dateStr+" (Use YYYYMMDD)")
 	}
 
-	record, err := h.DB.ReadHealthRecord(date)
+	record, err := h.DB.ReadHealthRecord(ctx, date)
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "Failed to read health record: "+err.Error())
 	}
@@ -181,14 +185,14 @@ func (h *HealthRecordHandler) getByDate(dateStr string) (*models.HealthRecord, e
 }
 
 // getByYearMonth retrieves record(s) for the specified year and month (YYYY, MM)
-func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models.HealthRecord, error) {
+func (h *HealthRecordHandler) getByYearMonth(ctx context.Context, yearStr, monthStr string) ([]models.HealthRecord, error) {
 	year, err := time.Parse("2006", yearStr)
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.ErrorTypeInvalidYear, "Invalid year format: "+yearStr+" (Use YYYY)")
 	}
 
 	if monthStr == "" {
-		records, err := h.DB.ReadHealthRecordsByYear(year.Year())
+		records, err := h.DB.ReadHealthRecordsByYear(ctx, year.Year())
 		if err != nil {
 			return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "Failed to read health records: "+err.Error())
 		}
@@ -199,7 +203,7 @@ func (h *HealthRecordHandler) getByYearMonth(yearStr, monthStr string) ([]models
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.ErrorTypeInvalidMonth, "Invalid month format: "+monthStr+" (Use MM)")
 	}
-	records, err := h.DB.ReadHealthRecordsByYearMonth(year.Year(), int(month.Month()))
+	records, err := h.DB.ReadHealthRecordsByYearMonth(ctx, year.Year(), int(month.Month()))
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "Failed to read  health records: "+err.Error())
 	}
