@@ -22,8 +22,8 @@ type DBInterface interface {
 	ReadHealthRecord(ctx context.Context, date time.Time) (*models.HealthRecord, error)
 	ReadHealthRecordsByYear(ctx context.Context, year int) ([]models.HealthRecord, error)
 	ReadHealthRecordsByYearMonth(ctx context.Context, year, month int) ([]models.HealthRecord, error)
-	UpdateHealthRecord(hr *models.HealthRecord) error
-	DeleteHealthRecord(date time.Time) error
+	UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error
+	DeleteHealthRecord(ctx context.Context, date time.Time) error
 }
 
 // NewDB opens the DB
@@ -148,61 +148,6 @@ func (db *DB) CreateTable() error {
 }
 
 // CreateHealthRecord inserts a new record
-// func (db *DB) CreateHealthRecord(hr *models.HealthRecord) (*models.HealthRecord, error) {
-// 	var createdRecord *models.HealthRecord
-//
-// 	insertStmt, err := db.getStmt("insert_health_record")
-// 	if err != nil {
-// 		return nil, fmt.Errorf("getting insert statment: %w", err)
-// 	}
-//
-// 	err = db.withTx(func(tx *sql.Tx) error {
-// 		// stmt := tx.Stmt(db.stmts["insert_health_record"])
-// 		stmt := tx.Stmt(insertStmt)
-//
-// 		now := time.Now()
-// 		result, err := stmt.Exec(hr.Date, hr.StepCount, now, now)
-// 		if err != nil {
-// 			return fmt.Errorf("insert record: %w", err)
-// 		}
-//
-// 		id, err := result.LastInsertId()
-// 		if err != nil {
-// 			return fmt.Errorf("get last insert id: %w", err)
-// 		}
-// 		createdRecord = &models.HealthRecord{
-// 			ID:        id,
-// 			Date:      hr.Date,
-// 			StepCount: hr.StepCount,
-// 			CreatedAt: now,
-// 			UpdatedAt: now,
-// 		}
-//
-// 		return nil
-// 	})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-//
-// 	return createdRecord, nil
-// }
-
-// ReadHealthRecord retrieves a health record by date
-// func (db *DB) ReadHealthRecord(date time.Time) (*models.HealthRecord, error) {
-// 	query := `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE date = ?`
-// 	hr := &models.HealthRecord{}
-// 	err := db.QueryRow(query, date).Scan(&hr.ID, &hr.Date, &hr.StepCount, &hr.CreatedAt, &hr.UpdatedAt)
-// 	if err != nil {
-// 		if err == sql.ErrNoRows {
-// 			return nil, nil
-// 		}
-// 		return nil, err
-// 	}
-//
-// 	return hr, nil
-// }
-
-// CreateHealthRecord inserts a new record
 func (db *DB) CreateHealthRecord(ctx context.Context, hr *models.HealthRecord) (*models.HealthRecord, error) {
 	insertStmt, err := db.getStmt("insert_health_record")
 	if err != nil {
@@ -304,11 +249,16 @@ func (db *DB) readHealthRecordsByRange(ctx context.Context, startDate, endDate t
 }
 
 // UpdateHealthRecord updates an existing health record
-func (db *DB) UpdateHealthRecord(hr *models.HealthRecord) error {
-	return db.withTx(func(tx *sql.Tx) error {
-		// Check existing a record
+func (db *DB) UpdatehealthRecord(ctx context.Context, hr *models.HealthRecord) error {
+	updateStmt, err := db.getStmt("update_health_record")
+	if err != nil {
+		return fmt.Errorf("getting update statement: %w", err)
+	}
+
+	return db.withTxContext(ctx, func(tx *sql.Tx) error {
+		// check if record exists
 		var exists bool
-		err := tx.QueryRow("SELECT 1 FROM health_records WHERE date = ?", hr.Date).Scan(&exists)
+		err := tx.QueryRowContext(ctx, "SELECT 1 FROM health_records WHERE date = ?", hr.Date).Scan(&exists)
 		if err != nil {
 			return fmt.Errorf("check existence: %w", err)
 		}
@@ -316,23 +266,28 @@ func (db *DB) UpdateHealthRecord(hr *models.HealthRecord) error {
 			return sql.ErrNoRows
 		}
 
-		// Update
-		query := `UPDATE health_records SET step_count = ?, updated_at = ? WHERE date = ?`
-		_, err = tx.Exec(query, hr.StepCount, time.Now(), hr.Date)
+		// update
+		stmt := tx.StmtContext(ctx, updateStmt)
+		now := time.Now()
+		_, err = stmt.ExecContext(ctx, hr.StepCount, now, hr.Date)
 		if err != nil {
-			return fmt.Errorf("execute update: %w", err)
+			return fmt.Errorf("execute update %w")
 		}
 
 		return nil
 	})
 }
 
-// DeleteHealthRecord removes a health record by date
-func (db *DB) DeleteHealthRecord(date time.Time) error {
-	return db.withTx(func(tx *sql.Tx) error {
-		// Check existing a record
+func (db *DB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
+	dleleteStmt, err := db.getStmt("delete_health_record")
+	if err != nil {
+		return fmt.Errorf("getting delete statement: %w", err)
+	}
+
+	return db.withTxContext(ctx, func(tx *sql.Tx) error {
+		// check if record exists
 		var exists bool
-		err := tx.QueryRow("SELECT 1 FROM health_records WHERE date = ?", date).Scan(&exists)
+		err := tx.QueryRowContext(ctx, "SELECT 1 FROM health_records WHERE date = ?", date).Scan(&exists)
 		if err != nil {
 			return fmt.Errorf("check existence: %w", err)
 		}
@@ -340,41 +295,13 @@ func (db *DB) DeleteHealthRecord(date time.Time) error {
 			return sql.ErrNoRows
 		}
 
-		// Delete
-		query := `DELETE FROM health_records WHERE date = ?`
-		_, err = tx.Exec(query, date)
+		// delete
+		stmt := tx.StmtContext(ctx, dleleteStmt)
+		_, err = stmt.ExecContext(ctx, date)
 		if err != nil {
 			return fmt.Errorf("execute delete: %w", err)
 		}
 
 		return nil
 	})
-}
-
-type TxFn func(*sql.Tx) error
-
-func (db *DB) withTx(fn TxFn) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-
-	defer func() {
-		if p := recover(); p != nil {
-			tx.Rollback()
-			panic(p)
-		}
-	}()
-
-	if err := fn(tx); err != nil {
-		if rbErr := tx.Rollback(); rbErr != nil {
-			return fmt.Errorf("rallback failed: %v (original error: %w)", rbErr, err)
-		}
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-	return nil
 }
