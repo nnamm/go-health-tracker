@@ -30,7 +30,7 @@ func (v *DefaultHealthRecordValidator) Validate(hr *models.HealthRecord) error {
 		return apperr.NewAppError(apperr.ErrorTypeInvalidFormat, "step count must not be negative")
 	}
 
-	if hr.StepCount > 1000000 {
+	if hr.StepCount > 100000 {
 		return apperr.NewAppError(apperr.ErrorTypeInvalidFormat, "step count is unrealistically high")
 	}
 
