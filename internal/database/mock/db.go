@@ -17,14 +17,14 @@ var (
 )
 
 type MockDB struct {
-	mu                sync.RWMutex
-	records           map[time.Time]*models.HealthRecord
-	createFunc        func(context.Context, *models.HealthRecord) (*models.HealthRecord, error)
-	readFunc          func(context.Context, time.Time) (*models.HealthRecord, error)
-	readYearFunc      func(context.Context, int) ([]models.HealthRecord, error)
-	readYearMonthFunc func(context.Context, int, int) ([]models.HealthRecord, error)
-	// updateFunc            func(*models.HealthRecord) error
-	// deleteFunc            func(time.Time) error
+	mu                    sync.RWMutex
+	records               map[time.Time]*models.HealthRecord
+	createFunc            func(context.Context, *models.HealthRecord) (*models.HealthRecord, error)
+	readFunc              func(context.Context, time.Time) (*models.HealthRecord, error)
+	readYearFunc          func(context.Context, int) ([]models.HealthRecord, error)
+	readYearMonthFunc     func(context.Context, int, int) ([]models.HealthRecord, error)
+	updateFunc            func(context.Context, *models.HealthRecord) error
+	deleteFunc            func(context.Context, time.Time) error
 	simulateTimeout       bool
 	simulateContextCancel bool
 	simulateDBError       bool
@@ -94,7 +94,6 @@ func (m *MockDB) CreateHealthRecord(ctx context.Context, hr *models.HealthRecord
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-
 	m.records[normalizedDate] = record
 	return record, nil
 }
@@ -170,4 +169,49 @@ func (m *MockDB) ReadHealthRecordsByYearMonth(ctx context.Context, year, month i
 		}
 	}
 	return records, nil
+}
+
+// UpdateHealthRecord updates a health record in the database
+func (m *MockDB) UpdateHelathRecord(ctx context.Context, hr *models.HealthRecord) error {
+	if err := m.checkContext(); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.updateFunc != nil {
+		return m.updateFunc(ctx, hr)
+	}
+
+	normalizedDate := normalizeDate(hr.Date)
+	record, exists := m.records[normalizedDate]
+	if !exists {
+		return ErrRecordNotFound
+	}
+
+	record.StepCount = hr.StepCount
+	record.UpdatedAt = time.Now()
+	return nil
+}
+
+func (m *MockDB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
+	if err := m.checkContext(); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.deleteFunc != nil {
+		return m.deleteFunc(ctx, date)
+	}
+
+	normalizedDate := normalizeDate(date)
+	if _, exists := m.records[normalizedDate]; !exists {
+		return ErrRecordNotFound
+	}
+
+	delete(m.records, normalizedDate)
+	return nil
 }
