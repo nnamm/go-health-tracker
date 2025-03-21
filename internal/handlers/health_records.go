@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -91,6 +92,7 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 		// Send success response
 		createdRecord, err := h.DB.CreateHealthRecord(ctx, &hr)
 		if err != nil {
+			fmt.Println("YYYYYYYYYYYYYYYYYYYYYYYYYYY")
 			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
 			return
 		}
@@ -287,7 +289,8 @@ func (h *HealthRecordHandler) handleError(w http.ResponseWriter, err error) {
 
 		clientMessage := appErr.Error()
 
-		if !config.IsDevelopment && appErr.Type == apperr.ErrorTypeInternalServer {
+		// if !config.IsDevelopment && appErr.Type == apperr.ErrorTypeInternalServer {
+		if !config.IsDev() && appErr.Type == apperr.ErrorTypeInternalServer {
 			clientMessage = "an internal server error occurred"
 		}
 

@@ -172,7 +172,7 @@ func (m *MockDB) ReadHealthRecordsByYearMonth(ctx context.Context, year, month i
 }
 
 // UpdateHealthRecord updates a health record in the database
-func (m *MockDB) UpdateHelathRecord(ctx context.Context, hr *models.HealthRecord) error {
+func (m *MockDB) UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error {
 	if err := m.checkContext(); err != nil {
 		return err
 	}
