@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -88,8 +89,10 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 			return
 		}
 
+		// Send success response
 		createdRecord, err := h.DB.CreateHealthRecord(ctx, &hr)
 		if err != nil {
+			fmt.Println("YYYYYYYYYYYYYYYYYYYYYYYYYYY")
 			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
 			return
 		}
@@ -135,35 +138,101 @@ func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Re
 
 // UpdateHealthRecord handles the update of an existing health record
 func (h *HealthRecordHandler) UpdateHealthRecord(w http.ResponseWriter, r *http.Request) {
-	var hr models.HealthRecord
-	if err := json.NewDecoder(r.Body).Decode(&hr); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	// Set a timeout for the request context
+	ctx, _ := context.WithTimeout(r.Context(), time.Duration(config.RequestTimeoutSecond)*time.Second)
 
-	if err := h.DB.UpdateHealthRecord(&hr); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	// Create a new request with original request's context
+	r = r.WithContext(ctx)
 
-	json.NewEncoder(w).Encode(hr)
+	// Limit the request body size to 8KB
+	r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
+
+	// Create channels to handle the request body and errors for async processing
+	bodyCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		bodyCh <- body
+	}()
+
+	// Check if the request has been cancelled or timed out
+	select {
+	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "request processing timed out"))
+		} else {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "request was cancelled"))
+		}
+	case err := <-errCh:
+		if err.Error() == "http: request body too large" {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeBadRequest, "request body too large"))
+		} else {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to read request body"))
+		}
+	case body := <-bodyCh:
+		var hr models.HealthRecord
+		if err := hr.UnmarshalJSON(body); err != nil {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidFormat, err.Error()))
+			return
+		}
+
+		if err := h.validator.Validate(&hr); err != nil {
+			h.handleError(w, err)
+			return
+		}
+
+		if err := h.DB.UpdateHealthRecord(ctx, &hr); err != nil {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to update health record: "+err.Error()))
+			return
+		}
+
+		// Send success response
+		updatedRecord, err := h.DB.ReadHealthRecord(ctx, hr.Date)
+		if err != nil {
+			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to read updated health record: "+err.Error()))
+			return
+		}
+
+		result := HealthRecordResult{
+			Records: []models.HealthRecord{*updatedRecord},
+		}
+		h.sendJSONResponse(w, result, http.StatusOK)
+	}
 }
 
 // DeleteHealthRecord handles the deletion of a health record
 func (h *HealthRecordHandler) DeleteHealthRecord(w http.ResponseWriter, r *http.Request) {
+	// Set a timeout for the request context
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(config.RequestTimeoutSecond)*time.Second)
+	defer cancel()
+
+	// Get date from query parameters and parse it
 	dateStr := r.URL.Query().Get("date")
-	date, err := time.Parse("2006-01-02", dateStr)
+	if dateStr == "" {
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeBadRequest, "date parameter is required"))
+		return
+	}
+
+	date, err := time.Parse("20060102", dateStr)
 	if err != nil {
-		http.Error(w, "Invalid date format. Use YYYY-MM-DD", http.StatusBadRequest)
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInvalidDate, "Invalid date format: "+dateStr+" (Use YYYYMMDD)"))
 		return
 	}
 
-	if err = h.DB.DeleteHealthRecord(date); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Delete the record
+	if err = h.DB.DeleteHealthRecord(ctx, date); err != nil {
+		h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to delete health record: "+err.Error()))
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	// Send success response
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Health record deleted successfully"})
 }
 
 // getByDate retrieves a record for the specified date (YYYYMMDD)
@@ -220,7 +289,8 @@ func (h *HealthRecordHandler) handleError(w http.ResponseWriter, err error) {
 
 		clientMessage := appErr.Error()
 
-		if !config.IsDevelopment && appErr.Type == apperr.ErrorTypeInternalServer {
+		// if !config.IsDevelopment && appErr.Type == apperr.ErrorTypeInternalServer {
+		if !config.IsDev() && appErr.Type == apperr.ErrorTypeInternalServer {
 			clientMessage = "an internal server error occurred"
 		}
 

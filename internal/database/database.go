@@ -42,6 +42,41 @@ func NewDB(dataSourceName string) (*DB, error) {
 		mu:    sync.RWMutex{},
 	}
 
+	if err := db.createTable(); err != nil {
+		return nil, fmt.Errorf("creating table: %w", err)
+	}
+
+	if err := db.prepareStatements(); err != nil {
+		return nil, fmt.Errorf("preparing statements: %w", err)
+	}
+
+	return db, nil
+}
+
+// CreateTable inisializes the table
+func (db *DB) createTable() error {
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS health_records (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			date DATE NOT NULL UNIQUE,
+			step_count INTEGER NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+	    )`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_health_records_date
+         on health_records(date)`,
+	}
+
+	for _, query := range queries {
+		if _, err := db.Exec(query); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PrepareStatements prepares SQL statements
+func (db *DB) prepareStatements() error {
 	queries := map[string]string{
 		"insert_health_record":       `INSERT INTO health_records (date, step_count, created_at, updated_at) VALUES (?, ?, ?, ?)`,
 		"select_health_record":       `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE date = ?`,
@@ -50,32 +85,18 @@ func NewDB(dataSourceName string) (*DB, error) {
 		"delete_health_record":       `DELETE FROM health_records WHERE date = ?`,
 	}
 
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	for name, query := range queries {
 		stmt, err := db.Prepare(query)
 		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("prepare statement %s: %w", name, err)
+			return fmt.Errorf("prepare statement %s: %w", name, err)
 		}
 		db.stmts[name] = stmt
 	}
 
-	return db, nil
-}
-
-// Close closes the DB
-func (db *DB) Close() error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
-	// close all prepared statements
-	for name, stmt := range db.stmts {
-		if err := stmt.Close(); err != nil {
-			return fmt.Errorf("closing statement %s: %w", name, err)
-		}
-	}
-
-	// close the original database connection
-	return db.DB.Close()
+	return nil
 }
 
 // getStmt is helper function to get a prepared statement
@@ -88,6 +109,22 @@ func (db *DB) getStmt(name string) (*sql.Stmt, error) {
 		return nil, fmt.Errorf("statement %s not found", name)
 	}
 	return stmt, nil
+}
+
+// Close closes the DB
+func (db *DB) Close() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// Close all prepared statements
+	for name, stmt := range db.stmts {
+		if err := stmt.Close(); err != nil {
+			return fmt.Errorf("closing statement %s: %w", name, err)
+		}
+	}
+
+	// Close the original database connection
+	return db.DB.Close()
 }
 
 // withTxContext executes a function with a transaction and context
@@ -123,28 +160,6 @@ func (db *DB) withTxContext(ctx context.Context, fn func(*sql.Tx) error) error {
 		}
 		return nil
 	}
-}
-
-// CreateTable inisializes the table
-func (db *DB) CreateTable() error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS health_records (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			date DATE NOT NULL UNIQUE,
-			step_count INTEGER NOT NULL,
-			created_at DATETIME NOT NULL,
-			updated_at DATETIME NOT NULL
-	    )`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_health_records_date
-         on health_records(date)`,
-	}
-
-	for _, query := range queries {
-		if _, err := db.Exec(query); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // CreateHealthRecord inserts a new record
@@ -249,7 +264,7 @@ func (db *DB) readHealthRecordsByRange(ctx context.Context, startDate, endDate t
 }
 
 // UpdateHealthRecord updates an existing health record
-func (db *DB) UpdatehealthRecord(ctx context.Context, hr *models.HealthRecord) error {
+func (db *DB) UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error {
 	updateStmt, err := db.getStmt("update_health_record")
 	if err != nil {
 		return fmt.Errorf("getting update statement: %w", err)
@@ -266,18 +281,19 @@ func (db *DB) UpdatehealthRecord(ctx context.Context, hr *models.HealthRecord) e
 			return sql.ErrNoRows
 		}
 
-		// update
+		// Update
 		stmt := tx.StmtContext(ctx, updateStmt)
 		now := time.Now()
 		_, err = stmt.ExecContext(ctx, hr.StepCount, now, hr.Date)
 		if err != nil {
-			return fmt.Errorf("execute update %w")
+			return fmt.Errorf("execute update %w", err)
 		}
 
 		return nil
 	})
 }
 
+// DeleteHealthRecord deletes a health record by date
 func (db *DB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 	dleleteStmt, err := db.getStmt("delete_health_record")
 	if err != nil {
@@ -285,7 +301,7 @@ func (db *DB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 	}
 
 	return db.withTxContext(ctx, func(tx *sql.Tx) error {
-		// check if record exists
+		// Check if record exists
 		var exists bool
 		err := tx.QueryRowContext(ctx, "SELECT 1 FROM health_records WHERE date = ?", date).Scan(&exists)
 		if err != nil {
@@ -295,7 +311,7 @@ func (db *DB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 			return sql.ErrNoRows
 		}
 
-		// delete
+		// Delete
 		stmt := tx.StmtContext(ctx, dleleteStmt)
 		_, err = stmt.ExecContext(ctx, date)
 		if err != nil {

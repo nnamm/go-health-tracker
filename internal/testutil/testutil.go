@@ -2,11 +2,15 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nnamm/go-health-tracker/internal/database/mock"
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
 
@@ -46,4 +50,63 @@ func FormatDateForAPI(t time.Time) string {
 // ParseAPIDateFormat parses the date string(YYYYMMDD) from API request
 func ParseAPIDateFormat(dateStr string) (time.Time, error) {
 	return time.Parse("20060102", dateStr)
+}
+
+// ParseJSONResponse parses a JSON response body into the given target
+func ParseJSONResponse(t *testing.T, body []byte, target any) {
+	t.Helper()
+	err := json.Unmarshal(body, target)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON response: %v", err)
+	}
+}
+
+// AssertErrorResponse checks if the error response contains the expected message
+func AssertErrorResponse(t *testing.T, body []byte, expectedMessage string) {
+	t.Helper()
+	var errResponse map[string]string
+	err := json.Unmarshal(body, &errResponse)
+	if err != nil {
+		t.Fatalf("Failed to parse error response: %v", err)
+	}
+
+	errMsg, ok := errResponse["error"]
+	if !ok {
+		t.Errorf("Error response does not contain 'error' field")
+		return
+	}
+
+	if !strings.Contains(errMsg, expectedMessage) {
+		t.Errorf("Error message '%s' does not contain expected message '%s'", errMsg, expectedMessage)
+	}
+}
+
+// SetupMockDBWithRecords sets up a mock DB with the given records
+func SetupMockDBWithRecords(t *testing.T, records ...*models.HealthRecord) *mock.MockDB {
+	t.Helper()
+	mockDB := mock.NewMockDB()
+	ctx := context.Background()
+
+	for _, record := range records {
+		_, err := mockDB.CreateHealthRecord(ctx, record)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+	}
+
+	return mockDB
+}
+
+// ExecuteHandlerRequest executes a handler with the given request and returns the response
+func ExecuteHandlerRequest(t *testing.T, handler http.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	return rr
+}
+
+// CreateHealthRecordJSON creates a JSON representation of a health record
+func CreateHealthRecordJSON(t *testing.T, date time.Time, stepCount int) string {
+	t.Helper()
+	return fmt.Sprintf(`{"date": "%s", "step_count": %d}`, date.Format("2006-01-02"), stepCount)
 }

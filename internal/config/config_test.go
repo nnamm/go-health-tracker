@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"strconv"
 	"testing"
 )
 
@@ -35,7 +34,8 @@ func TestDevelopment(t *testing.T) {
 				os.Setenv("ENV", tt.env)
 			}
 
-			IsDevelopment = os.Getenv("ENV") == "development"
+			// 環境変数を変更した後、ReloadConfig()を呼び出して設定を再読み込みする
+			ReloadConfig()
 
 			if IsDevelopment != tt.want {
 				t.Errorf("IsDevelopment = %v, want %v", IsDevelopment, tt.want)
@@ -73,14 +73,11 @@ func TestRequestTimeoutSecond(t *testing.T) {
 				os.Setenv("REQUEST_TIMEOUT_SECONDS", tt.timeout)
 			}
 
-			// call the initialization function manually (to test the init func)
-			// since we we can't acutually rerun the init func here, we call the relevant code directly
-			RequestTimeoutSecond = 30
-			if timeout := os.Getenv("REQUEST_TIMEOUT_SECONDS"); timeout != "" {
-				if val, err := strconv.Atoi(timeout); err == nil {
-					RequestTimeoutSecond = val
-				}
-			}
+			// 環境変数を変更した後、ReloadConfig()を呼び出して設定を再読み込みする
+			// これにより、重複したコードが不要になり、実際の実装をテストすることができる
+			RequestTimeoutSecond = 30 // デフォルト値に戻す
+			ReloadConfig()
+
 			if RequestTimeoutSecond != tt.want {
 				t.Errorf("RequestTimeoutSecond = %v, want %v", RequestTimeoutSecond, tt.want)
 			}

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"os"
@@ -21,7 +22,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// create table
-	err = testDB.CreateTable()
+	err = testDB.createTable()
 	if err != nil {
 		panic(err)
 	}
@@ -37,7 +38,7 @@ func TestMain(m *testing.M) {
 
 func TestCreateTable(t *testing.T) {
 	// create table test
-	if err := testDB.CreateTable(); err != nil {
+	if err := testDB.createTable(); err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
 
@@ -97,34 +98,35 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 
 	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			cleanupDB(t, testDB)
 
 			// create
-			created, err := testDB.CreateHealthRecord(tt.initial)
+			created, err := testDB.CreateHealthRecord(ctx, tt.initial)
 			if !errors.Is(err, tt.wantCreateErr) {
-				t.Errorf("CreateHealthRecord() error = %v, want %v", err, tt.wantAfterCreate)
+				t.Errorf("CreateHealthRecord() error = %v, want %v", err, tt.wantCreateErr)
 			}
-			if tt.wantAfterCreate != nil {
+			if tt.wantAfterCreate != nil && created != nil {
 				assertHealthRecord(t, created, tt.wantAfterCreate)
 			}
 
 			// update
-			err = testDB.UpdateHealthRecord(tt.update)
+			err = testDB.UpdateHealthRecord(ctx, tt.update)
 			if !errors.Is(err, tt.wantUpdateErr) {
-				t.Errorf("UpdateHealthRecord() error = %v, want %v", err, tt.wantAfterUpdate)
+				t.Errorf("UpdateHealthRecord() error = %v, want %v", err, tt.wantUpdateErr)
 			}
-			if tt.wantAfterUpdate != nil {
-				retrieved, _ := testDB.ReadHealthRecord(tt.update.Date)
+			if tt.wantAfterUpdate != nil && err == nil {
+				retrieved, _ := testDB.ReadHealthRecord(ctx, tt.update.Date)
 				assertHealthRecord(t, retrieved, tt.wantAfterUpdate)
 			}
 
 			// delete
 			if tt.initial != nil {
-				err = testDB.DeleteHealthRecord(tt.initial.Date)
+				err = testDB.DeleteHealthRecord(ctx, tt.initial.Date)
 				if !errors.Is(err, tt.wantDeleteErr) {
-					t.Errorf("DeleteHealthRecord() error = %v, want %v", err, tt.wantAfterDelete)
+					t.Errorf("DeleteHealthRecord() error = %v, want %v", err, tt.wantDeleteErr)
 				}
-				retrieved, _ := testDB.ReadHealthRecord(tt.initial.Date)
+				retrieved, _ := testDB.ReadHealthRecord(ctx, tt.initial.Date)
 				if retrieved != tt.wantAfterDelete {
 					t.Errorf("after delete, got record = %v, want %v", retrieved, tt.wantAfterDelete)
 				}
@@ -136,7 +138,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 func TestReadHealthRecords(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(*testing.T, *DB) // setup func
+		setup   func(*testing.T, *DB, context.Context) // setup func
 		year    int
 		month   *int // optional
 		want    []models.HealthRecord
@@ -144,8 +146,8 @@ func TestReadHealthRecords(t *testing.T) {
 	}{
 		{
 			name: "successful yearly query - returns all records for 2024",
-			setup: func(t *testing.T, db *DB) {
-				mustCreateRecords(t, db, []models.HealthRecord{
+			setup: func(t *testing.T, db *DB, ctx context.Context) {
+				mustCreateRecords(t, db, ctx, []models.HealthRecord{
 					{Date: date("2024-01-01"), StepCount: 10000},
 					{Date: date("2024-12-31"), StepCount: 11000},
 					{Date: date("2025-01-01"), StepCount: 12000},
@@ -161,8 +163,8 @@ func TestReadHealthRecords(t *testing.T) {
 		},
 		{
 			name: "successful monthly query - returns only Jan 2024 records",
-			setup: func(t *testing.T, db *DB) {
-				mustCreateRecords(t, db, []models.HealthRecord{
+			setup: func(t *testing.T, db *DB, ctx context.Context) {
+				mustCreateRecords(t, db, ctx, []models.HealthRecord{
 					{Date: date("2024-01-01"), StepCount: 10000},
 					{Date: date("2024-01-31"), StepCount: 11000},
 					{Date: date("2024-02-01"), StepCount: 12000},
@@ -178,8 +180,8 @@ func TestReadHealthRecords(t *testing.T) {
 		},
 		{
 			name: "empty result - no records for year",
-			setup: func(t *testing.T, db *DB) {
-				mustCreateRecords(t, db, []models.HealthRecord{
+			setup: func(t *testing.T, db *DB, ctx context.Context) {
+				mustCreateRecords(t, db, ctx, []models.HealthRecord{
 					{Date: date("2023-01-01"), StepCount: 10000},
 					{Date: date("2025-01-01"), StepCount: 11000},
 				})
@@ -192,17 +194,18 @@ func TestReadHealthRecords(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			cleanupDB(t, testDB)
 			if tt.setup != nil {
-				tt.setup(t, testDB)
+				tt.setup(t, testDB, ctx)
 			}
 
 			var got []models.HealthRecord
 			var err error
 			if tt.month == nil {
-				got, err = testDB.ReadHealthRecordsByYear(tt.year)
+				got, err = testDB.ReadHealthRecordsByYear(ctx, tt.year)
 			} else {
-				got, err = testDB.ReadHealthRecordsByYearMonth(tt.year, *tt.month)
+				got, err = testDB.ReadHealthRecordsByYearMonth(ctx, tt.year, *tt.month)
 			}
 
 			if !errors.Is(err, tt.wantErr) {
@@ -231,10 +234,10 @@ func monthOf(m int) *int {
 }
 
 // mustCreateRecords creates multiple health records.
-func mustCreateRecords(t *testing.T, db *DB, records []models.HealthRecord) {
+func mustCreateRecords(t *testing.T, db *DB, ctx context.Context, records []models.HealthRecord) {
 	t.Helper()
 	for _, r := range records {
-		_, err := db.CreateHealthRecord(&r)
+		_, err := db.CreateHealthRecord(ctx, &r)
 		if err != nil {
 			t.Fatalf("failed to create record: %v", err)
 		}
@@ -263,7 +266,10 @@ func assertHealthRecordsEqual(t *testing.T, got, want []models.HealthRecord) {
 	}
 
 	for i := range got {
-		if got[i].Date != want[i].Date {
+		if i >= len(want) {
+			break
+		}
+		if !got[i].Date.Equal(want[i].Date) {
 			t.Errorf("Date = %v, want %v", got[i].Date, want[i].Date)
 		}
 
