@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nnamm/go-health-tracker/internal/dbtest"
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
 
@@ -71,11 +72,11 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 		{
 			name: "normal scenario - Create, Update, Delete success",
 			initial: &models.HealthRecord{
-				Date:      time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				Date:      dbtest.CreateDate("2024-01-01"),
 				StepCount: 10000,
 			},
 			update: &models.HealthRecord{
-				Date:      time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				Date:      dbtest.CreateDate("2024-01-01"),
 				StepCount: 12000,
 			},
 			wantAfterCreate: &models.HealthRecord{StepCount: 10000},
@@ -99,7 +100,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			cleanupDB(t, testDB)
+			dbtest.CleanupDB(t, testDB.DB)
 
 			// create
 			created, err := testDB.CreateHealthRecord(ctx, tt.initial)
@@ -107,7 +108,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 				t.Errorf("CreateHealthRecord() error = %v, want %v", err, tt.wantCreateErr)
 			}
 			if tt.wantAfterCreate != nil && created != nil {
-				assertHealthRecord(t, created, tt.wantAfterCreate)
+				dbtest.AssertHelathRecordEqual(t, created, tt.wantAfterCreate)
 			}
 
 			// update
@@ -117,7 +118,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 			}
 			if tt.wantAfterUpdate != nil && err == nil {
 				retrieved, _ := testDB.ReadHealthRecord(ctx, tt.update.Date)
-				assertHealthRecord(t, retrieved, tt.wantAfterUpdate)
+				dbtest.AssertHelathRecordEqual(t, retrieved, tt.wantAfterUpdate)
 			}
 
 			// delete
@@ -138,7 +139,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 func TestReadHealthRecords(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(*testing.T, *DB, context.Context) // setup func
+		setup   func(*testing.T, *DB, context.Context)
 		year    int
 		month   *int // optional
 		want    []models.HealthRecord
@@ -147,44 +148,47 @@ func TestReadHealthRecords(t *testing.T) {
 		{
 			name: "successful yearly query - returns all records for 2024",
 			setup: func(t *testing.T, db *DB, ctx context.Context) {
-				mustCreateRecords(t, db, ctx, []models.HealthRecord{
-					{Date: date("2024-01-01"), StepCount: 10000},
-					{Date: date("2024-12-31"), StepCount: 11000},
-					{Date: date("2025-01-01"), StepCount: 12000},
-				})
+				records := []models.HealthRecord{
+					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
+					{Date: dbtest.CreateDate("2024-12-31"), StepCount: 11000},
+					{Date: dbtest.CreateDate("2025-01-01"), StepCount: 12000},
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, records)
 			},
 			year:  2024,
 			month: nil, // yearly query
 			want: []models.HealthRecord{
-				{Date: date("2024-01-01"), StepCount: 10000},
-				{Date: date("2024-12-31"), StepCount: 11000},
+				{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
+				{Date: dbtest.CreateDate("2024-12-31"), StepCount: 11000},
 			},
 			wantErr: nil,
 		},
 		{
 			name: "successful monthly query - returns only Jan 2024 records",
 			setup: func(t *testing.T, db *DB, ctx context.Context) {
-				mustCreateRecords(t, db, ctx, []models.HealthRecord{
-					{Date: date("2024-01-01"), StepCount: 10000},
-					{Date: date("2024-01-31"), StepCount: 11000},
-					{Date: date("2024-02-01"), StepCount: 12000},
-				})
+				records := []models.HealthRecord{
+					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
+					{Date: dbtest.CreateDate("2024-01-31"), StepCount: 11000},
+					{Date: dbtest.CreateDate("2024-02-01"), StepCount: 12000},
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, records)
 			},
 			year:  2024,
-			month: monthOf(1),
+			month: dbtest.MonthOf(1),
 			want: []models.HealthRecord{
-				{Date: date("2024-01-01"), StepCount: 10000},
-				{Date: date("2024-01-31"), StepCount: 11000},
+				{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
+				{Date: dbtest.CreateDate("2024-01-31"), StepCount: 11000},
 			},
 			wantErr: nil,
 		},
 		{
 			name: "empty result - no records for year",
 			setup: func(t *testing.T, db *DB, ctx context.Context) {
-				mustCreateRecords(t, db, ctx, []models.HealthRecord{
-					{Date: date("2023-01-01"), StepCount: 10000},
-					{Date: date("2025-01-01"), StepCount: 11000},
-				})
+				records := []models.HealthRecord{
+					{Date: dbtest.CreateDate("2023-01-01"), StepCount: 10000},
+					{Date: dbtest.CreateDate("2025-01-01"), StepCount: 11000},
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, records)
 			},
 			year:    2024,
 			want:    []models.HealthRecord{},
@@ -195,7 +199,7 @@ func TestReadHealthRecords(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			cleanupDB(t, testDB)
+			dbtest.CleanupDB(t, testDB.DB)
 			if tt.setup != nil {
 				tt.setup(t, testDB, ctx)
 			}
@@ -213,68 +217,8 @@ func TestReadHealthRecords(t *testing.T) {
 			}
 
 			if err == nil {
-				assertHealthRecordsEqual(t, got, tt.want)
+				dbtest.AssertHealthRecordsEqual(t, got, tt.want)
 			}
 		})
-	}
-}
-
-// date converts a date string to time.Time.
-func date(s string) time.Time {
-	t, err := time.Parse("2006-01-02", s)
-	if err != nil {
-		panic(err)
-	}
-	return t
-}
-
-// monthOf returns pointer to the argument.
-func monthOf(m int) *int {
-	return &m
-}
-
-// mustCreateRecords creates multiple health records.
-func mustCreateRecords(t *testing.T, db *DB, ctx context.Context, records []models.HealthRecord) {
-	t.Helper()
-	for _, r := range records {
-		_, err := db.CreateHealthRecord(ctx, &r)
-		if err != nil {
-			t.Fatalf("failed to create record: %v", err)
-		}
-	}
-}
-
-func cleanupDB(t *testing.T, db *DB) {
-	t.Helper()
-	_, err := db.Exec("DELETE FROM health_records")
-	if err != nil {
-		t.Fatalf("Failed to cleanup database: %v", err)
-	}
-}
-
-func assertHealthRecord(t *testing.T, got, want *models.HealthRecord) {
-	t.Helper()
-	if got.StepCount != want.StepCount {
-		t.Errorf("StepCount = %v, want %v", got.StepCount, want.StepCount)
-	}
-}
-
-func assertHealthRecordsEqual(t *testing.T, got, want []models.HealthRecord) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Errorf("got %d records, want %d records", len(got), len(want))
-	}
-
-	for i := range got {
-		if i >= len(want) {
-			break
-		}
-		if !got[i].Date.Equal(want[i].Date) {
-			t.Errorf("Date = %v, want %v", got[i].Date, want[i].Date)
-		}
-
-		if got[i].StepCount != want[i].StepCount {
-			t.Errorf("StepCount = %v, want %v", got[i].StepCount, want[i].StepCount)
-		}
 	}
 }
