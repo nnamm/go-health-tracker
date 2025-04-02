@@ -39,7 +39,7 @@ func MonthOf(m int) *int {
 }
 
 // assertHealthRecordEqual compares two HealthRecord
-func AssertHelathRecordEqual(t *testing.T, got, want *models.HealthRecord) {
+func AssertHealthRecordEqual(t *testing.T, got, want *models.HealthRecord) {
 	t.Helper()
 	if got.StepCount != want.StepCount {
 		t.Errorf("StepCount = %v, want %v", got.StepCount, want.StepCount)
