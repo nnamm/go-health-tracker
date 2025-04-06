@@ -479,3 +479,30 @@ func TestDeleteHealthRecord(t *testing.T) {
 		})
 	}
 }
+
+func TestContextCancellation(t *testing.T) {
+	date := dbtest.CreateDate("2024-07-01")
+	record := &models.HealthRecord{
+		Date:      date,
+		StepCount: 10000,
+	}
+	ctx := context.Background()
+	_, err := testDB.CreateHealthRecord(ctx, record)
+	if err != nil {
+		t.Fatalf("failed to create test record: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cancel()
+
+	err = testDB.UpdateHealthRecord(ctx, record)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+
+	err = testDB.DeleteHealthRecord(ctx, date)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
