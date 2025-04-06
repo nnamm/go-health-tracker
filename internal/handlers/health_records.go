@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -92,7 +91,6 @@ func (h *HealthRecordHandler) CreateHealthRecord(w http.ResponseWriter, r *http.
 		// Send success response
 		createdRecord, err := h.DB.CreateHealthRecord(ctx, &hr)
 		if err != nil {
-			fmt.Println("YYYYYYYYYYYYYYYYYYYYYYYYYYY")
 			h.handleError(w, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to create health record: "+err.Error()))
 			return
 		}
@@ -139,7 +137,8 @@ func (h *HealthRecordHandler) GetHealthRecords(w http.ResponseWriter, r *http.Re
 // UpdateHealthRecord handles the update of an existing health record
 func (h *HealthRecordHandler) UpdateHealthRecord(w http.ResponseWriter, r *http.Request) {
 	// Set a timeout for the request context
-	ctx, _ := context.WithTimeout(r.Context(), time.Duration(config.RequestTimeoutSecond)*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(config.RequestTimeoutSecond)*time.Second)
+	defer cancel()
 
 	// Create a new request with original request's context
 	r = r.WithContext(ctx)

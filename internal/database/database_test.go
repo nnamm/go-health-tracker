@@ -70,7 +70,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 		wantDeleteErr   error                //
 	}{
 		{
-			name: "normal scenario - Create, Update, Delete success",
+			name: "normal scenario - create, Update, Delete success",
 			initial: &models.HealthRecord{
 				Date:      dbtest.CreateDate("2024-01-01"),
 				StepCount: 10000,
@@ -84,16 +84,20 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 			wantAfterDelete: nil,
 		},
 		{
-			name: "error scenerio - Update non-existence record",
+			name: "error scenerio - update non-existence record",
 			initial: &models.HealthRecord{
-				Date:      time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				Date:      dbtest.CreateDate("2024-01-01"),
 				StepCount: 10000,
 			},
 			update: &models.HealthRecord{
-				Date:      time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				Date:      dbtest.CreateDate("2024-01-02"),
 				StepCount: 15000,
 			},
 			wantUpdateErr: sql.ErrNoRows,
+		},
+		{
+			name:          "error scenerio - delete non-existence record",
+			wantDeleteErr: sql.ErrNoRows,
 		},
 	}
 
@@ -103,27 +107,31 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 			dbtest.CleanupDB(t, testDB.DB)
 
 			// create
-			created, err := testDB.CreateHealthRecord(ctx, tt.initial)
-			if !errors.Is(err, tt.wantCreateErr) {
-				t.Errorf("CreateHealthRecord() error = %v, want %v", err, tt.wantCreateErr)
-			}
-			if tt.wantAfterCreate != nil && created != nil {
-				dbtest.AssertHelathRecordEqual(t, created, tt.wantAfterCreate)
+			if tt.initial != nil {
+				created, err := testDB.CreateHealthRecord(ctx, tt.initial)
+				if !errors.Is(err, tt.wantCreateErr) {
+					t.Errorf("CreateHealthRecord() error = %v, want %v", err, tt.wantCreateErr)
+				}
+				if tt.wantAfterCreate != nil && created != nil {
+					dbtest.AssertHealthRecordEqual(t, created, tt.wantAfterCreate)
+				}
 			}
 
 			// update
-			err = testDB.UpdateHealthRecord(ctx, tt.update)
-			if !errors.Is(err, tt.wantUpdateErr) {
-				t.Errorf("UpdateHealthRecord() error = %v, want %v", err, tt.wantUpdateErr)
-			}
-			if tt.wantAfterUpdate != nil && err == nil {
-				retrieved, _ := testDB.ReadHealthRecord(ctx, tt.update.Date)
-				dbtest.AssertHelathRecordEqual(t, retrieved, tt.wantAfterUpdate)
+			if tt.update != nil {
+				err := testDB.UpdateHealthRecord(ctx, tt.update)
+				if !errors.Is(err, tt.wantUpdateErr) {
+					t.Errorf("UpdateHealthRecord() error = %v, want %v", err, tt.wantUpdateErr)
+				}
+				if tt.wantAfterUpdate != nil && err == nil {
+					retrieved, _ := testDB.ReadHealthRecord(ctx, tt.update.Date)
+					dbtest.AssertHealthRecordEqual(t, retrieved, tt.wantAfterUpdate)
+				}
 			}
 
 			// delete
 			if tt.initial != nil {
-				err = testDB.DeleteHealthRecord(ctx, tt.initial.Date)
+				err := testDB.DeleteHealthRecord(ctx, tt.initial.Date)
 				if !errors.Is(err, tt.wantDeleteErr) {
 					t.Errorf("DeleteHealthRecord() error = %v, want %v", err, tt.wantDeleteErr)
 				}
@@ -139,7 +147,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 func TestReadHealthRecords(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(*testing.T, *DB, context.Context)
+		setup   func(*testing.T, context.Context, *DB)
 		year    int
 		month   *int // optional
 		want    []models.HealthRecord
@@ -147,7 +155,7 @@ func TestReadHealthRecords(t *testing.T) {
 	}{
 		{
 			name: "successful yearly query - returns all records for 2024",
-			setup: func(t *testing.T, db *DB, ctx context.Context) {
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2024-12-31"), StepCount: 11000},
@@ -165,7 +173,7 @@ func TestReadHealthRecords(t *testing.T) {
 		},
 		{
 			name: "successful monthly query - returns only Jan 2024 records",
-			setup: func(t *testing.T, db *DB, ctx context.Context) {
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2024-01-31"), StepCount: 11000},
@@ -183,7 +191,7 @@ func TestReadHealthRecords(t *testing.T) {
 		},
 		{
 			name: "empty result - no records for year",
-			setup: func(t *testing.T, db *DB, ctx context.Context) {
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2023-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2025-01-01"), StepCount: 11000},
@@ -201,7 +209,7 @@ func TestReadHealthRecords(t *testing.T) {
 			ctx := context.Background()
 			dbtest.CleanupDB(t, testDB.DB)
 			if tt.setup != nil {
-				tt.setup(t, testDB, ctx)
+				tt.setup(t, ctx, testDB)
 			}
 
 			var got []models.HealthRecord
@@ -220,5 +228,281 @@ func TestReadHealthRecords(t *testing.T) {
 				dbtest.AssertHealthRecordsEqual(t, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestUpdateHealthRecord(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*testing.T, context.Context, *DB)
+		update    *models.HealthRecord
+		nonUpdate *models.HealthRecord
+		wantErr   error
+	}{
+		{
+			name: "successful update",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-01"),
+				StepCount: 12000,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "successful update - max step count",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-01"),
+				StepCount: 100000,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "successful update - zero step count",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-01"),
+				StepCount: 0,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "verify update affects only specified record",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				records := []models.HealthRecord{
+					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
+					{Date: dbtest.CreateDate("2024-01-02"), StepCount: 20000},
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, records)
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-01"),
+				StepCount: 15000,
+			},
+			nonUpdate: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-02"),
+				StepCount: 20000,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "error - update non-existence record",
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-01"),
+				StepCount: 10000,
+			},
+			wantErr: sql.ErrNoRows,
+		},
+		{
+			name: "error - update with different date (future)",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-02-01"),
+				StepCount: 12000,
+			},
+			wantErr: sql.ErrNoRows,
+		},
+		{
+			name: "error - update with different date (past)",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2020-01-01"),
+				StepCount: 12000,
+			},
+			wantErr: sql.ErrNoRows,
+		},
+		{
+			name: "error - update with improbable step count",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			update: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2020-01-01"),
+				StepCount: 100001,
+			},
+			wantErr: sql.ErrNoRows,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			dbtest.CleanupDB(t, testDB.DB)
+
+			if tt.setup != nil {
+				tt.setup(t, ctx, testDB)
+			}
+
+			err := testDB.UpdateHealthRecord(ctx, tt.update)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err == nil {
+				retrieved, _ := testDB.ReadHealthRecord(ctx, tt.update.Date)
+				dbtest.AssertHealthRecordEqual(t, retrieved, tt.update)
+			}
+			if tt.nonUpdate != nil {
+				nonAffectRecord, _ := testDB.ReadHealthRecord(ctx, tt.nonUpdate.Date)
+				dbtest.AssertHealthRecordEqual(t, nonAffectRecord, tt.nonUpdate)
+			}
+		})
+	}
+}
+
+func TestDeleteHealthRecord(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*testing.T, context.Context, *DB)
+		deleteDate time.Time
+		nonDelete  *models.HealthRecord
+		wantErr    error
+	}{
+		{
+			name: "successful delete",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			deleteDate: dbtest.CreateDate("2024-01-01"),
+			wantErr:    nil,
+		},
+		{
+			name: "verify delete affects only specified record",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				records := []models.HealthRecord{
+					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
+					{Date: dbtest.CreateDate("2024-01-02"), StepCount: 20000},
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, records)
+			},
+			deleteDate: dbtest.CreateDate("2024-01-01"),
+			nonDelete: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-01-02"),
+				StepCount: 20000,
+			},
+			wantErr: nil,
+		},
+		{
+			name:       "error - delete non-existence record",
+			setup:      nil,
+			deleteDate: dbtest.CreateDate("2024-01-01"),
+			wantErr:    sql.ErrNoRows,
+		},
+		{
+			name: "error - delete with different date (future)",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			deleteDate: dbtest.CreateDate("2025-02-01"),
+			wantErr:    sql.ErrNoRows,
+		},
+		{
+			name: "error - delete with different date (past)",
+			setup: func(t *testing.T, ctx context.Context, db *DB) {
+				record := &models.HealthRecord{
+					Date:      dbtest.CreateDate("2024-01-01"),
+					StepCount: 10000,
+				}
+				dbtest.CreateTestRecords(ctx, t, db.DB, []models.HealthRecord{*record})
+			},
+			deleteDate: dbtest.CreateDate("2023-12-31"),
+			wantErr:    sql.ErrNoRows,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			dbtest.CleanupDB(t, testDB.DB)
+
+			if tt.setup != nil {
+				tt.setup(t, ctx, testDB)
+			}
+
+			err := testDB.DeleteHealthRecord(ctx, tt.deleteDate)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if err == nil {
+				retrieved, _ := testDB.ReadHealthRecord(ctx, tt.deleteDate)
+				if retrieved != nil {
+					t.Errorf("record still exists after deletion")
+				}
+			}
+			if tt.nonDelete != nil {
+				nonAffectRecord, _ := testDB.ReadHealthRecord(ctx, tt.nonDelete.Date)
+				dbtest.AssertHealthRecordEqual(t, nonAffectRecord, tt.nonDelete)
+			}
+		})
+	}
+}
+
+func TestContextCancellation(t *testing.T) {
+	date := dbtest.CreateDate("2024-07-01")
+	record := &models.HealthRecord{
+		Date:      date,
+		StepCount: 10000,
+	}
+	ctx := context.Background()
+	_, err := testDB.CreateHealthRecord(ctx, record)
+	if err != nil {
+		t.Fatalf("failed to create test record: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cancel()
+
+	err = testDB.UpdateHealthRecord(ctx, record)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+
+	err = testDB.DeleteHealthRecord(ctx, date)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }
