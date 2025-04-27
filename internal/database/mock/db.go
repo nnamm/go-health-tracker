@@ -216,7 +216,7 @@ func (m *MockDB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 	return nil
 }
 
-func (m *MockDB) GetStoredrecordDirectly(date time.Time) *models.HealthRecord {
+func (m *MockDB) GetStoredRecordDirectly(date time.Time) *models.HealthRecord {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
