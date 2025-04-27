@@ -624,11 +624,11 @@ func TestCreateHealthRecordRollbackOnConstraintViolation(t *testing.T) {
 
 func TestUpdateHealthRecordRollback(t *testing.T) {
 	tests := []struct {
-		name        string
-		setupMock   func(*mock.MockDB)
-		initRecord  *models.HealthRecord
-		record      *models.HealthRecord
-		wantErrType error
+		name          string
+		setupMock     func(*mock.MockDB)
+		initRecord    *models.HealthRecord
+		updatedRecord *models.HealthRecord
+		wantErrType   error
 	}{
 		{
 			name: "rollback on context cancellation",
@@ -639,34 +639,42 @@ func TestUpdateHealthRecordRollback(t *testing.T) {
 				Date:      dbtest.CreateDate("2024-05-01"),
 				StepCount: 10000,
 			},
-			record: &models.HealthRecord{
+			updatedRecord: &models.HealthRecord{
 				Date:      dbtest.CreateDate("2024-05-01"),
 				StepCount: 20000,
 			},
 			wantErrType: context.Canceled,
 		},
-		// {
-		// 	name: "rollback on timeout",
-		// 	setupMock: func(db *mock.MockDB) {
-		// 		db.SetSimulateTimeout(true)
-		// 	},
-		// 	record: &models.HealthRecord{
-		// 		Date:      dbtest.CreateDate("2024-05-02"),
-		// 		StepCount: 12500,
-		// 	},
-		// 	wantErrType: context.DeadlineExceeded,
-		// },
-		// {
-		// 	name: "rollback on database error",
-		// 	setupMock: func(db *mock.MockDB) {
-		// 		db.SetSimulateDBError(true)
-		// 	},
-		// 	record: &models.HealthRecord{
-		// 		Date:      dbtest.CreateDate("2024-05-03"),
-		// 		StepCount: 13000,
-		// 	},
-		// 	wantErrType: mock.ErrDataBaseConnection,
-		// },
+		{
+			name: "rollback on timeout",
+			setupMock: func(db *mock.MockDB) {
+				db.SetSimulateTimeout(true)
+			},
+			initRecord: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-05-02"),
+				StepCount: 10000,
+			},
+			updatedRecord: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-05-02"),
+				StepCount: 12500,
+			},
+			wantErrType: context.DeadlineExceeded,
+		},
+		{
+			name: "rollback on database error",
+			setupMock: func(db *mock.MockDB) {
+				db.SetSimulateDBError(true)
+			},
+			initRecord: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-05-03"),
+				StepCount: 10000,
+			},
+			updatedRecord: &models.HealthRecord{
+				Date:      dbtest.CreateDate("2024-05-03"),
+				StepCount: 13000,
+			},
+			wantErrType: mock.ErrDataBaseConnection,
+		},
 	}
 
 	for _, tt := range tests {
@@ -683,7 +691,7 @@ func TestUpdateHealthRecordRollback(t *testing.T) {
 				tt.setupMock(mockDB)
 			}
 
-			err = mockDB.UpdateHealthRecord(ctx, tt.record)
+			err = mockDB.UpdateHealthRecord(ctx, tt.updatedRecord)
 			if err == nil {
 				t.Fatalf("UpdateHealthRecord() expected error, got nil")
 			}
@@ -692,9 +700,11 @@ func TestUpdateHealthRecordRollback(t *testing.T) {
 				t.Errorf("UpdateHealthRecord() error = %v, wantErrTyep %v", err, tt.wantErrType)
 			}
 
-			checkRecord, _ := mockDB.ReadHealthRecord(ctx, tt.record.Date)
-			if checkRecord.StepCount != tt.initRecord.StepCount {
-				t.Errorf("record was committed despite error: %v", checkRecord)
+			storedRecord := mockDB.GetStoredrecordDirectly(tt.initRecord.Date)
+			if storedRecord == nil {
+				t.Error("reocrd was not stored properly")
+			} else if storedRecord.StepCount != tt.initRecord.StepCount {
+				t.Errorf("reocrd was modified despite error: got %d, want %d", storedRecord.StepCount, tt.initRecord.StepCount)
 			}
 		})
 	}
