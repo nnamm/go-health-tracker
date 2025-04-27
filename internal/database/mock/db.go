@@ -40,7 +40,7 @@ func (m *MockDB) SetSimulateTimeout(simulate bool) {
 	m.simulateTimeout = simulate
 }
 
-func (m *MockDB) SetSimulateContextCalcel(simulate bool) {
+func (m *MockDB) SetSimulateContextCancel(simulate bool) {
 	m.simulateContextCancel = simulate
 }
 
@@ -214,4 +214,12 @@ func (m *MockDB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 
 	delete(m.records, normalizedDate)
 	return nil
+}
+
+func (m *MockDB) GetStoredRecordDirectly(date time.Time) *models.HealthRecord {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	normalizedDate := normalizeDate(date)
+	return m.records[normalizedDate]
 }
