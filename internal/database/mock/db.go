@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -142,6 +143,9 @@ func (m *MockDB) ReadHealthRecordsByYear(ctx context.Context, year int) ([]model
 			records = append(records, *record)
 		}
 	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Date.Before(records[j].Date)
+	})
 	return records, nil
 }
 
@@ -168,6 +172,9 @@ func (m *MockDB) ReadHealthRecordsByYearMonth(ctx context.Context, year, month i
 			records = append(records, *record)
 		}
 	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Date.Before(records[j].Date)
+	})
 	return records, nil
 }
 

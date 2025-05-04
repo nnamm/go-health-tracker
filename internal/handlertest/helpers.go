@@ -1,4 +1,4 @@
-package testutil
+package handlertest
 
 import (
 	"context"
@@ -15,9 +15,9 @@ import (
 )
 
 // CreateTestContext returns the context and cancel function for testing
-func CreateTestContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 5*time.Second)
-}
+// func CreateTestContext() (context.Context, context.CancelFunc) {
+// 	return context.WithTimeout(context.Background(), 5*time.Second)
+// }
 
 // CreateRequestContext creates an HTTP request with JSON content type for testing
 func CreateRequestContext(ctx context.Context, method, url, body string) *http.Request {
@@ -35,21 +35,25 @@ func AssertHTTPStatusCode(t *testing.T, got, want int) {
 }
 
 // CreateTestHealthRecord creates a new health record for testing
-func CreateTestHealthRecord(date time.Time, stepCount int) *models.HealthRecord {
-	return &models.HealthRecord{
-		Date:      date,
-		StepCount: stepCount,
-	}
-}
+// func CreateTestHealthRecord(date time.Time, stepCount int) *models.HealthRecord {
+// 	return &models.HealthRecord{
+// 		Date:      date,
+// 		StepCount: stepCount,
+// 	}
+// }
 
 // FormatDateForAPI formats the date for API request(YYYYMMDD)
-func FormatDateForAPI(t time.Time) string {
-	return t.Format("20060102")
-}
+// func FormatDateForAPI(t time.Time) string {
+// 	return t.Format("20060102")
+// }
 
-// ParseAPIDateFormat parses the date string(YYYYMMDD) from API request
-func ParseAPIDateFormat(dateStr string) (time.Time, error) {
-	return time.Parse("20060102", dateStr)
+// ParseAPIDateFormat parses the date string(YYYY-MM-DD) from API request
+func ParseAPIDateFormat(dateStr string) time.Time {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		panic(err)
+	}
+	return t
 }
 
 // ParseJSONResponse parses a JSON response body into the given target
@@ -82,13 +86,14 @@ func AssertErrorResponse(t *testing.T, body []byte, expectedMessage string) {
 }
 
 // SetupMockDBWithRecords sets up a mock DB with the given records
-func SetupMockDBWithRecords(t *testing.T, records ...*models.HealthRecord) *mock.MockDB {
+// func SetupMockDBWithRecords(t *testing.T, records ...*models.HealthRecord) *mock.MockDB {
+func SetupMockDBWithRecords(t *testing.T, records []models.HealthRecord) *mock.MockDB {
 	t.Helper()
 	mockDB := mock.NewMockDB()
 	ctx := context.Background()
 
 	for _, record := range records {
-		_, err := mockDB.CreateHealthRecord(ctx, record)
+		_, err := mockDB.CreateHealthRecord(ctx, &record)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
