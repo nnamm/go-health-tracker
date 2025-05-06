@@ -209,7 +209,7 @@ func TestGetHealthRecord(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name: "error - invalid format (date)",
+			name: "error - invalid date format",
 			setupMock: func(t *testing.T) *mock.MockDB {
 				return mock.NewMockDB()
 			},
@@ -219,7 +219,7 @@ func TestGetHealthRecord(t *testing.T) {
 			errorMessage:   "invalid date format",
 		},
 		{
-			name: "error - invalid format (year)",
+			name: "error - invalid year format",
 			setupMock: func(t *testing.T) *mock.MockDB {
 				return mock.NewMockDB()
 			},
@@ -229,7 +229,7 @@ func TestGetHealthRecord(t *testing.T) {
 			errorMessage:   "invalid year format",
 		},
 		{
-			name: "error - invalid format (month)",
+			name: "error - invalid month format",
 			setupMock: func(t *testing.T) *mock.MockDB {
 				return mock.NewMockDB()
 			},
@@ -417,6 +417,112 @@ func TestUpdateHealthRecord(t *testing.T) {
 
 			// Act
 			rr := handlertest.ExecuteHandlerRequest(t, handler.UpdateHealthRecord, req)
+
+			// Assert
+			handlertest.AssertHTTPStatusCode(t, rr.Code, tt.expectedStatus)
+
+			if tt.wantError {
+				handlertest.AssertErrorResponse(t, rr.Body.Bytes(), tt.errorMessage)
+			} else if tt.checkResponse != nil {
+				tt.checkResponse(t, rr)
+			}
+		})
+	}
+}
+
+func TestDeleteHealthRecord(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupMock      func(*testing.T) *mock.MockDB
+		queryParams    string
+		expectedStatus int
+		wantError      bool
+		errorMessage   string
+		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
+	}{
+		{
+			name: "successful - normal delete",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				records := []models.HealthRecord{
+					{Date: handlertest.ParseAPIDateFormat("2025-01-01"), StepCount: 10000},
+				}
+				return handlertest.SetupMockDBWithRecords(t, records)
+			},
+			queryParams:    "?date=20250101",
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				var result HealthRecordResult
+				handlertest.ParseJSONResponse(t, rr.Body.Bytes(), &result)
+
+				require.Len(t, result.Records, 0)
+			},
+		},
+		{
+			name: "error - record not found",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				// Setup an empty mock DB without the requested record
+				return mock.NewMockDB()
+			},
+			queryParams:    "?date=20250101",
+			expectedStatus: http.StatusInternalServerError,
+			wantError:      true,
+			errorMessage:   "record not found",
+		},
+		{
+			name: "error - invalid date format",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				return mock.NewMockDB()
+			},
+			queryParams:    "?date=2025/01/01", // Wrong format
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "invalid date format",
+		},
+		{
+			name: "error - missing query parameters",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				return mock.NewMockDB()
+			},
+			queryParams:    "",
+			expectedStatus: http.StatusBadRequest,
+			wantError:      true,
+			errorMessage:   "date parameter is required",
+		},
+		{
+			name: "error - database error",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				mockDB := mock.NewMockDB()
+				mockDB.SetSimulateDBError(true)
+				return mockDB
+			},
+			queryParams:    "?date=20250101",
+			expectedStatus: http.StatusInternalServerError,
+			wantError:      true,
+			errorMessage:   "failed to delete health record",
+		},
+		{
+			name: "error - timeout",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				mockDB := mock.NewMockDB()
+				mockDB.SetSimulateTimeout(true)
+				return mockDB
+			},
+			queryParams:    "?date=20250101",
+			expectedStatus: http.StatusInternalServerError,
+			wantError:      true,
+			errorMessage:   "failed to delete health record",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := tt.setupMock(t)
+			handler := NewHealthRecordHandler(mockDB)
+			ctx := context.Background()
+			req := handlertest.CreateRequestContext(ctx, http.MethodDelete, "/health/records"+tt.queryParams, "")
+
+			// Act
+			rr := handlertest.ExecuteHandlerRequest(t, handler.DeleteHealthRecord, req)
 
 			// Assert
 			handlertest.AssertHTTPStatusCode(t, rr.Code, tt.expectedStatus)
