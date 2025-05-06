@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	healthRecordsPath      = "/health/records"
-	healthRecordsRangePath = "/health/records/range"
+	healthRecordsPath = "/health/records"
 )
 
 func main() {
@@ -53,8 +52,6 @@ func routeHandler(handler *handlers.HealthRecordHandler) http.HandlerFunc {
 		switch strings.TrimSuffix(r.URL.Path, "/") {
 		case healthRecordsPath:
 			handleHealthRecords(handler, w, r)
-		case healthRecordsRangePath:
-			handleHealthRecordsRange(handler, w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -63,6 +60,12 @@ func routeHandler(handler *handlers.HealthRecordHandler) http.HandlerFunc {
 
 // handleHealthRecords handles /health/reorords endpoints
 func handleHealthRecords(handler *handlers.HealthRecordHandler, w http.ResponseWriter, r *http.Request) {
+	// CORS preflight request support
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		handler.GetHealthRecords(w, r)
@@ -75,18 +78,6 @@ func handleHealthRecords(handler *handlers.HealthRecordHandler, w http.ResponseW
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-// handleHealthRecordsRange handles /health/records/range endpoints
-func handleHealthRecordsRange(handler *handlers.HealthRecordHandler, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// temp logic
-	http.NotFound(w, r)
-	// TODO: implement and call handler.GetHealthRecordsRange(w, r)
 }
 
 // setCommonHeaders sets common response headers
