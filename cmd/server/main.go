@@ -4,9 +4,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/internal/handlers"
+)
+
+const (
+	healthRecordsPath      = "/health/records"
+	healthRecordsRangePath = "/health/records/range"
 )
 
 func main() {
@@ -17,34 +24,15 @@ func main() {
 	}
 	db, err := database.NewDB(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to connect database: %v", err)
+		log.Fatalf("failed to connect database: %v", err)
 	}
 	defer db.Close()
-
-	// Create table
-	err = db.CreateTable()
-	if err != nil {
-		log.Fatalf("Failed to create table: %v", err)
-	}
 
 	// Initialize handler
 	healthHandler := handlers.NewHealthRecordHandler(db)
 
-	// Configure routing
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			healthHandler.GetHealthRecords(w, r)
-		case http.MethodPost:
-			healthHandler.CreateHealthRecord(w, r)
-		case http.MethodPut:
-			healthHandler.UpdateHealthRecord(w, r)
-		case http.MethodDelete:
-			healthHandler.DeleteHealthRecord(w, r)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	// Register route handlers
+	http.HandleFunc("/", logMiddleware(routeHandler(healthHandler)))
 
 	// Start the server
 	port := os.Getenv("PORT")
@@ -53,4 +41,77 @@ func main() {
 	}
 	log.Printf("Server is running on http://localhost:%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+// routeHandler handles all routes for the API
+func routeHandler(handler *handlers.HealthRecordHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set common response headers
+		setCommonHeaders(w)
+
+		// Route based on path
+		switch strings.TrimSuffix(r.URL.Path, "/") {
+		case healthRecordsPath:
+			handleHealthRecords(handler, w, r)
+		case healthRecordsRangePath:
+			handleHealthRecordsRange(handler, w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+// handleHealthRecords handles /health/reorords endpoints
+func handleHealthRecords(handler *handlers.HealthRecordHandler, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		handler.GetHealthRecords(w, r)
+	case http.MethodPost:
+		handler.CreateHealthRecord(w, r)
+	case http.MethodPut:
+		handler.UpdateHealthRecord(w, r)
+	case http.MethodDelete:
+		handler.DeleteHealthRecord(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleHealthRecordsRange handles /health/records/range endpoints
+func handleHealthRecordsRange(handler *handlers.HealthRecordHandler, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// temp logic
+	http.NotFound(w, r)
+	// TODO: implement and call handler.GetHealthRecordsRange(w, r)
+}
+
+// setCommonHeaders sets common response headers
+func setCommonHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // CORS
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
+
+// logMiddleware logs request details
+func logMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		startTime := time.Now()
+
+		// call the warapped handler
+		next(w, r)
+
+		// Log the request details
+		log.Printf(
+			"[%s] %s %s %s",
+			r.Method,
+			r.URL.Path,
+			r.RemoteAddr,
+			time.Since(startTime),
+		)
+	}
 }
