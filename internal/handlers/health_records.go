@@ -245,9 +245,6 @@ func (h *HealthRecordHandler) getByDate(ctx context.Context, dateStr string) (*m
 	if err != nil {
 		return nil, apperr.NewAppError(apperr.ErrorTypeInternalServer, "failed to read health record: "+err.Error())
 	}
-	if record == nil {
-		return nil, apperr.NewAppError(apperr.ErrorTypeNotFound, "unexpected: Health record not found for date: "+dateStr)
-	}
 
 	return record, nil
 }

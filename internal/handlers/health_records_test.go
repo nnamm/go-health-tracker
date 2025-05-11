@@ -152,6 +152,23 @@ func TestGetHealthRecord(t *testing.T) {
 			},
 		},
 		{
+			name: "successful - data not exist",
+			setupMock: func(t *testing.T) *mock.MockDB {
+				records := []models.HealthRecord{
+					{Date: handlertest.ParseAPIDateFormat("2025-01-01"), StepCount: 10000},
+				}
+				return handlertest.SetupMockDBWithRecords(t, records)
+			},
+			queryParams:    "?date=20240101",
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				var result HealthRecordResult
+				handlertest.ParseJSONResponse(t, rr.Body.Bytes(), &result)
+
+				require.Len(t, result.Records, 0)
+			},
+		},
+		{
 			name: "successful - get by year",
 			setupMock: func(t *testing.T) *mock.MockDB {
 				records := []models.HealthRecord{
@@ -196,17 +213,6 @@ func TestGetHealthRecord(t *testing.T) {
 				assert.Equal(t, "2024-01-15", result.Records[1].Date.Format("2006-01-02"))
 				assert.Equal(t, 11000, result.Records[1].StepCount)
 			},
-		},
-		{
-			name: "successful - data not exist",
-			setupMock: func(t *testing.T) *mock.MockDB {
-				records := []models.HealthRecord{
-					{Date: handlertest.ParseAPIDateFormat("2025-01-01"), StepCount: 10000},
-				}
-				return handlertest.SetupMockDBWithRecords(t, records)
-			},
-			queryParams:    "?date=20240101",
-			expectedStatus: http.StatusNotFound,
 		},
 		{
 			name: "error - invalid date format",
