@@ -116,3 +116,4 @@ fabric.properties
 
 # Custom
 health_tracker.db
+health_tracker_test.db
