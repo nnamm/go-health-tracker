@@ -1,0 +1,39 @@
+# Git 
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Development
+.golangci.yaml
+health_tracker.db
+health_tracker_test.db
+
+# Test
+*_test.go
+testdata/
+coverage.txt
+coverage.html
+coverage.out
+
+# Build
+/bin/
+/dist/
+/build/
+
+# Editor
+.cursor
+avante.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Others
+*.log
+.cache
+.tmp
+LICENSE
+README.md
