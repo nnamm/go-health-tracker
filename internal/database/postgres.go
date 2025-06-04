@@ -215,7 +215,7 @@ func (db *PostgresDB) UpdateHealthRecord(ctx context.Context, hr *models.HealthR
 }
 
 // DeleteHealthRecord deletes a health record
-func (db *PostgresDB) DeleteHealthRecord(ctx context.Context, hr *models.HealthRecord) error {
+func (db *PostgresDB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 	tx, err := db.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -231,18 +231,18 @@ func (db *PostgresDB) DeleteHealthRecord(ctx context.Context, hr *models.HealthR
 	// Check if record exists
 	var exists bool
 	checkQuery := "SELECT EXISTS(SELECT 1 FROM health_records WHERE date = $1)"
-	err = tx.QueryRow(ctx, checkQuery, hr.Date).Scan(&exists)
+	err = tx.QueryRow(ctx, checkQuery, date).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("failed to check record existence: %w", err)
 	}
 
 	if !exists {
-		return fmt.Errorf("record not found for date: %v", hr.Date)
+		return fmt.Errorf("record not found for date: %v", date)
 	}
 
 	// Delete the record
 	deleteQuery := `DELETE FROM health_records WHERE date = $1`
-	_, err = tx.Exec(ctx, deleteQuery, hr.Date)
+	_, err = tx.Exec(ctx, deleteQuery, date)
 	if err != nil {
 		return fmt.Errorf("failed to delete health record: %w", err)
 	}
