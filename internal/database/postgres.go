@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nnamm/go-health-tracker/internal/config"
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
 
@@ -15,28 +16,57 @@ type PostgresDB struct {
 	pool *pgxpool.Pool
 }
 
-// NewPostgresDB creates a new PostgreSQL database connection pool
+// NewPostgresDB creates a new PostgreSQL database connection pool using configuration
 func NewPostgresDB(dataSourceName string) (*PostgresDB, error) {
+	return NewPostgresDBWithConfig(dataSourceName, config.DBConfig)
+}
+
+// NewPostgresDBWithConfig creates a new PostgreSQL database connection pool with explicit configuration
+// This function is useful for testing or when you need to override the global config
+func NewPostgresDBWithConfig(dataSourceName string, dbConfig *config.DatabaseConfig) (*PostgresDB, error) {
+	if dbConfig == nil {
+		return nil, fmt.Errorf("database configuration cannot be nil")
+	}
+
+	// Use existing validation from factory.go instead of duplicating logic
+	if err := ValidateConfiguration(dbConfig); err != nil {
+		return nil, fmt.Errorf("invalid database configuration: %w", err)
+	}
+
+	// Parse the pool configuration from connection string
 	poolConfig, err := pgxpool.ParseConfig(dataSourceName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse postgres config: %w", err)
 	}
 
-	poolConfig.MaxConns = 25
-	poolConfig.MinConns = 5
-	poolConfig.MaxConnLifetime = time.Hour
-	poolConfig.MaxConnIdleTime = time.Minute * 30
+	// Apply configuration values from config instead of hardcoded values
+	poolConfig.MaxConns = dbConfig.MaxConns
+	poolConfig.MinConns = dbConfig.MinConns
+	poolConfig.MaxConnLifetime = dbConfig.MaxConnLifetime
+	poolConfig.MaxConnIdleTime = dbConfig.MaxConnIdleTime
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	// Set health check period based on best practices
+	// Health check period should be shorter than max idle time for optimal performance
+	healthCheckPeriod := time.Minute
+	if dbConfig.MaxConnIdleTime > 2*time.Minute {
+		healthCheckPeriod = dbConfig.MaxConnIdleTime / 2
+	}
+	poolConfig.HealthCheckPeriod = healthCheckPeriod
+
+	// Create connection pool with timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create postgres pool: %w", err)
 	}
 
 	// Test the connection with a timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
 
-	if err = pool.Ping(ctx); err != nil {
+	if err = pool.Ping(pingCtx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("failed to ping postgres: %w", err)
 	}
@@ -45,6 +75,7 @@ func NewPostgresDB(dataSourceName string) (*PostgresDB, error) {
 		pool: pool,
 	}
 
+	// Create table with timeout context
 	if err := db.createTable(); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("failed to create table: %w", err)
@@ -270,4 +301,57 @@ func (db *PostgresDB) Ping(ctx context.Context) error {
 // Stats returns connection pool statistics
 func (db *PostgresDB) Stats() *pgxpool.Stat {
 	return db.pool.Stat()
+}
+
+// HealthCheck performs a comprehensive health check of the database connection
+func (db *PostgresDB) HealthCheck(ctx context.Context) error {
+	// Check if pool is available
+	if db.pool == nil {
+		return fmt.Errorf("database pool is not initialized")
+	}
+
+	// Ping the database
+	if err := db.pool.Ping(ctx); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+
+	// Check pool statistics for potential issues
+	stats := db.pool.Stat()
+	if stats.TotalConns() == 0 {
+		return fmt.Errorf("no database connections available")
+	}
+
+	// Verify we can execute a simple query
+	var result int
+	err := db.pool.QueryRow(ctx, "SELECT 1").Scan(&result)
+	if err != nil {
+		return fmt.Errorf("database query test failed: %w", err)
+	}
+
+	if result != 1 {
+		return fmt.Errorf("database query returned unexpected result: %d", result)
+	}
+
+	return nil
+}
+
+// GetPoolInfo returns formatted pool information for monitoring/debugging
+func (db *PostgresDB) GetPoolInfo() map[string]interface{} {
+	if db.pool == nil {
+		return map[string]interface{}{
+			"status": "not_initialized",
+		}
+	}
+
+	stats := db.pool.Stat()
+	return map[string]interface{}{
+		"status":               "active",
+		"total_connections":    stats.TotalConns(),
+		"acquired_connections": stats.AcquiredConns(),
+		"idle_connections":     stats.IdleConns(),
+		"max_connections":      stats.MaxConns(),
+		"acquire_count":        stats.AcquireCount(),
+		"acquire_duration":     stats.AcquireDuration(),
+		"new_conns_count":      stats.NewConnsCount(),
+	}
 }
