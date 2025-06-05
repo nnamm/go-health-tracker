@@ -36,6 +36,14 @@ if [ ! -f .env ]; then
   echo "📝 Creating .env file from .env.example..."
   cp .env.example .env
   echo "✅ .env file created. Please review and modify the settings if needed."
+  echo ""
+  echo "⚠️  IMPORTANT: Update the following placeholders in .env file:"
+  echo "  - DB_PASSWORD: Replace 'YOUR_POSTGRES_PASSWORD_HERE' with actual password"
+  echo "  - PGADMIN_PASSWORD: Replace 'YOUR_PGADMIN_PASSWORD_HERE' with actual password"
+  echo ""
+  echo "Press any key to continue after updating .env file..."
+  read -n 1 -s
+  echo ""
 fi
 
 # Load environment variables
@@ -97,7 +105,7 @@ echo "📊 Services:"
 echo "  - PostgreSQL: localhost:${DB_PORT:-5432}"
 echo "  - pgAdmin: http://localhost:${PGADMIN_PORT:-8080}"
 echo "    - Email: ${PGADMIN_EMAIL:-admin@example.com}"
-echo "    - Password: ${PGADMIN_PASSWORD:-admin}"
+echo "    - Password: ${PGADMIN_PASSWORD:-change_this_password}"
 
 if [ "$ENABLE_MONITORING" = true ]; then
   echo "  - PostgreSQL Metrics: http://localhost:9187/metrics"
