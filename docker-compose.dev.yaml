@@ -1,0 +1,74 @@
+services:
+  postgres:
+    environment:
+      # Enhanced logging for development
+      POSTGRES_LOG_STATEMENT: "all"
+      POSTGRES_LOG_MIN_DURATION_STATEMENT: "0"
+      POSTGRES_LOG_CONNECTIONS: "on"
+      POSTGRES_LOG_DISCONNECTIONS: "on"
+      POSTGRES_LOG_LOCK_WAITS: "on"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - ./docker/postgres/logs:/var/log/postgresql
+      # Temporarily disabled until migration files are created
+      # - ./sql/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    command: >
+      postgres
+      -c log_statement=all
+      -c log_destination=stderr
+      -c logging_collector=on
+      -c log_directory=/var/log/postgresql
+      -c log_filename=postgresql-%Y-%m-%d_%H%M%S.log
+      -c log_rotation_age=1d
+      -c log_rotation_size=100MB
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c log_min_duration_statement=100
+      -c log_checkpoints=on
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_lock_waits=on
+    depends_on: []
+
+  # pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: health-tracker_dev-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "${PGADMIN_PORT:-8080}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - health-tracker-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Optional: Database monitoring with pg_stat_statements
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: health-tracker_dev-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-health_tracker}?sslmode=disable"
+    ports:
+      - "9187:9187"
+    networks:
+      - health-tracker-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - monitoring
+
+volumes:
+  pgadmin_data:
+    driver: local

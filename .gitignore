@@ -49,7 +49,6 @@ config/production.yaml
 
 # Cursor etc
 .cursor
-avante.md
 
 # OS generated files
 .DS_Store
@@ -67,3 +66,16 @@ coverage.out
 
 # Air live reload tool
 tmp/
+
+# Docker related
+docker/postgres/logs/*
+!docker/postgres/logs/.gitkeep
+docker/pgadmin/storage/
+docker/pgadmin/sessions/
+
+# PostgreSQL data (if using bind mounts)
+postgres_data/
+pgdata/
+
+# Build errors from Air
+build-errors.log
