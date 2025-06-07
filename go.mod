@@ -1,6 +1,6 @@
 module github.com/nnamm/go-health-tracker
 
-go 1.24.3
+go 1.24.4
 
 require (
 	github.com/jackc/pgx/v5 v5.7.5
