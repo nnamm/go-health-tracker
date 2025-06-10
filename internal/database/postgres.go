@@ -336,15 +336,15 @@ func (db *PostgresDB) HealthCheck(ctx context.Context) error {
 }
 
 // GetPoolInfo returns formatted pool information for monitoring/debugging
-func (db *PostgresDB) GetPoolInfo() map[string]interface{} {
+func (db *PostgresDB) GetPoolInfo() map[string]any {
 	if db.pool == nil {
-		return map[string]interface{}{
+		return map[string]any{
 			"status": "not_initialized",
 		}
 	}
 
 	stats := db.pool.Stat()
-	return map[string]interface{}{
+	return map[string]any{
 		"status":               "active",
 		"total_connections":    stats.TotalConns(),
 		"acquired_connections": stats.AcquiredConns(),
