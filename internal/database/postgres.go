@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nnamm/go-health-tracker/internal/config"
 	"github.com/nnamm/go-health-tracker/internal/models"
@@ -333,6 +334,11 @@ func (db *PostgresDB) HealthCheck(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Exec executes a query that doesn't return rows
+func (db *PostgresDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	return db.pool.Exec(ctx, sql, args...)
 }
 
 // GetPoolInfo returns formatted pool information for monitoring/debugging
