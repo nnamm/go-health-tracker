@@ -42,6 +42,19 @@ func FindHealthRecordByYear(records []*models.HealthRecord, year int) []models.H
 	return results
 }
 
+func FindHealthRecordByYearMonth(records []*models.HealthRecord, year, month int) []models.HealthRecord {
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, 0)
+	var results []models.HealthRecord
+	for _, record := range records {
+		if (record.Date.After(startDate) || record.Date.Equal(startDate)) &&
+			record.Date.Before(endDate) {
+			results = append(results, *record)
+		}
+	}
+	return results
+}
+
 func AssertHealthRecord(t *testing.T, got, want *models.HealthRecord) {
 	t.Helper()
 

@@ -178,7 +178,7 @@ func TestReadHealthRecorsByYear(t *testing.T) {
 			year:            2024,
 			expectFound:     true,
 			expectedRecords: testutils.FindHealthRecordByYear(testRecords, 2024),
-			expectedCount:   8,
+			expectedCount:   9,
 		},
 		{
 			name:            "existing records found - 2025",
@@ -200,6 +200,67 @@ func TestReadHealthRecorsByYear(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ptc.DB.ReadHealthRecordsByYear(ctx, tt.year)
 			require.NoError(t, err, "ReadHealthRecordsByYear should not return error for any valid year")
+
+			if tt.expectFound {
+				require.NotNil(t, got)
+				assert.Len(t, got, tt.expectedCount)
+				testutils.AssertHealthRecords(t, got, tt.expectedRecords)
+			} else {
+				assert.Empty(t, got)
+			}
+		})
+	}
+}
+
+func TestReadHealthRecorsByYearMonth(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	testRecords := testutils.CreateHealthRecords()
+	cleanup := testutils.SetupTestData(ctx, t, ptc, testRecords)
+	defer cleanup()
+
+	tests := []struct {
+		name            string
+		year            int
+		month           int
+		expectFound     bool
+		expectedRecords []models.HealthRecord
+		expectedCount   int
+	}{
+		{
+			name:            "existing records found - 202401",
+			year:            2024,
+			month:           1,
+			expectFound:     true,
+			expectedRecords: testutils.FindHealthRecordByYearMonth(testRecords, 2024, 1),
+			expectedCount:   5,
+		},
+		{
+			name:            "existing records found - 2025",
+			year:            2024,
+			month:           3,
+			expectFound:     true,
+			expectedRecords: testutils.FindHealthRecordByYearMonth(testRecords, 2024, 3),
+			expectedCount:   1,
+		},
+		{
+			name:            "record not found",
+			year:            2026,
+			month:           12,
+			expectFound:     false,
+			expectedRecords: nil,
+			expectedCount:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ptc.DB.ReadHealthRecordsByYearMonth(ctx, tt.year, tt.month)
+			require.NoError(t, err, "ReadHealthRecordsByRange should not return error for any valid year")
 
 			if tt.expectFound {
 				require.NotNil(t, got)

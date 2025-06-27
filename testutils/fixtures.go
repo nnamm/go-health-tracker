@@ -20,6 +20,7 @@ func CreateHealthRecords() []*models.HealthRecord {
 		CreateHealthRecord("2024-01-02", 9200),
 		CreateHealthRecord("2024-01-03", 7800),
 		CreateHealthRecord("2024-01-15", 10500),
+		CreateHealthRecord("2024-01-31", 10500),
 		CreateHealthRecord("2024-02-01", 6500),
 		CreateHealthRecord("2024-02-14", 11000),
 		CreateHealthRecord("2024-03-01", 9800),
