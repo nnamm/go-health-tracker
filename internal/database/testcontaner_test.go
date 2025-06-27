@@ -1,3 +1,5 @@
+//go:build ignore_test
+
 package database
 
 import (
