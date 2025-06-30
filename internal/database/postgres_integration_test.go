@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -271,4 +272,239 @@ func TestReadHealthRecorsByYearMonth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateHealthRecord(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Share a single container for all test cases
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	tests := []struct {
+		name         string
+		setupRecord  *models.HealthRecord // Initial record to create (nil if no setup needed)
+		updateRecord *models.HealthRecord // Record data to update with
+		wantError    bool
+		errorMsg     string // Expected error substring
+		validate     bool
+		description  string // Additional context for the test case
+	}{
+		{
+			name:        "successfully_update_existing_record",
+			setupRecord: testutils.CreateHealthRecord("2024-06-01", 8500),
+			updateRecord: &models.HealthRecord{
+				Date:      testutils.CreateDate("2024-06-01"),
+				StepCount: 12000,
+			},
+			wantError:   false,
+			validate:    true,
+			description: "Should successfully update step count of existing record",
+		},
+		{
+			name:        "successfully_update_to_zero_steps",
+			setupRecord: testutils.CreateHealthRecord("2024-06-02", 8500),
+			updateRecord: &models.HealthRecord{
+				Date:      testutils.CreateDate("2024-06-02"),
+				StepCount: 0,
+			},
+			wantError:   false,
+			validate:    true,
+			description: "Should allow updating to zero step count",
+		},
+		{
+			name:        "successfully_update_to_maximum_int_value",
+			setupRecord: testutils.CreateHealthRecord("2024-06-03", 8500),
+			updateRecord: &models.HealthRecord{
+				Date:      testutils.CreateDate("2024-06-03"),
+				StepCount: 2147483647, // Maximum int32 value
+			},
+			wantError:   false,
+			validate:    true,
+			description: "Should handle maximum integer step count",
+		},
+		// handlers test case
+		// {
+		// 	name:         "fail_update_non_existing_record",
+		// 	setupRecord:  nil, // No initial record
+		// 	updateRecord: testutils.CreateHealthRecord("2024-06-04", 8500),
+		// 	wantError:    true,
+		// 	errorMsg:     "record not found for date",
+		// 	description:  "Should fail when trying to update non-existing record",
+		// },
+		// handlers test case
+		// {
+		// 	name:        "fail_update_with_negative_step_count",
+		// 	setupRecord: testutils.CreateHealthRecord("2024-06-05", 8500),
+		// 	updateRecord: &models.HealthRecord{
+		// 		Date:      testutils.CreateDate("2024-06-05"),
+		// 		StepCount: -1,
+		// 	},
+		// 	wantError:   true,
+		// 	errorMsg:    "failed to update health record",
+		// 	description: "Should fail with negative step count due to CHECK constraint",
+		// },
+		{
+			name:        "successfully_update_same_value",
+			setupRecord: testutils.CreateHealthRecord("2024-06-06", 8500),
+			updateRecord: &models.HealthRecord{
+				Date:      testutils.CreateDate("2024-06-06"),
+				StepCount: 8500, // Same value as initial
+			},
+			wantError:   false,
+			validate:    true,
+			description: "Should successfully update even with same value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up data before each test case
+			ptc.CleanupTestData(ctx, t)
+
+			// Setup initinal record needed
+			if tt.setupRecord != nil {
+				_, err := ptc.DB.CreateHealthRecord(ctx, tt.setupRecord)
+				require.NoError(t, err, "failed to setup initial record for test: %s", tt.description)
+			}
+
+			// Record the time before update for timestamp validation
+			beforeUpdate := time.Now()
+
+			// Perform the update opration
+			err := ptc.DB.UpdateHealthRecord(ctx, tt.updateRecord)
+
+			if tt.wantError {
+				require.Error(t, err, "expected error for test case: %s", tt.description)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg, "error message should contain expected substring for test: %s", tt.description)
+				}
+			} else {
+				require.NoError(t, err, "unexpected error for test case: %s", tt.description)
+
+				if tt.validate {
+					// Verify the record was updated correctly
+					updatedRecord, err := ptc.DB.ReadHealthRecord(ctx, tt.updateRecord.Date)
+					require.NoError(t, err, "failed to read updated record")
+					require.NotNil(t, updatedRecord, "updated record should not be nil")
+
+					// Validate core fields
+					assert.Equal(t,
+						tt.updateRecord.StepCount,
+						updatedRecord.StepCount,
+						"Step count should match expected value")
+					assert.Equal(t,
+						tt.updateRecord.Date.Format("2006-01-02"),
+						updatedRecord.Date.Format("2006-01-02"),
+						"Date should remain unchanged")
+
+					// Validate timestamp fields
+					assert.NotZero(t, updatedRecord.ID, "ID should be set")
+					assert.NotZero(t, updatedRecord.CreatedAt, "CreatedAt should be set")
+					assert.NotZero(t, updatedRecord.UpdatedAt, "UpdatedAt should be set")
+
+					// Verify UpdatedAt was modified
+					assert.True(t,
+						updatedRecord.UpdatedAt.After(beforeUpdate) ||
+							updatedRecord.UpdatedAt.Equal(beforeUpdate),
+						"UpdatedAto should be recent")
+
+					// For updates, UpdatedAt should be >= CreatedAt
+					assert.True(t,
+						updatedRecord.UpdatedAt.After(updatedRecord.CreatedAt) ||
+							updatedRecord.UpdatedAt.Equal(updatedRecord.CreatedAt),
+						"UpdatedAt should be >= CreatedAt for update records")
+				}
+			}
+		})
+	}
+}
+
+func TestUpdateHealthRecord_ConcurrentUpdates(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	// Setup initial record for concurrent testing
+	initialRecord := testutils.CreateHealthRecord("2024-07-01", 8500)
+	_, err := ptc.DB.CreateHealthRecord(ctx, initialRecord)
+	require.NoError(t, err, "failed to setup initial record for concurrent test")
+
+	// Create multiple update records with different step counts
+	updates := []*models.HealthRecord{
+		{
+			Date:      testutils.CreateDate("2024-07-01"),
+			StepCount: 10000,
+		},
+		{
+			Date:      testutils.CreateDate("2024-07-01"),
+			StepCount: 12000,
+		},
+		{
+			Date:      testutils.CreateDate("2024-07-01"),
+			StepCount: 15000,
+		},
+	}
+	// Execute concurrent updates
+	var wg sync.WaitGroup
+	errors := make([]error, len(updates))
+
+	for i, update := range updates {
+		wg.Add(1)
+		go func(index int, updateRecord *models.HealthRecord) {
+			defer wg.Done()
+			errors[index] = ptc.DB.UpdateHealthRecord(ctx, updateRecord)
+		}(i, update)
+	}
+
+	// Wait for all updates to complete
+	wg.Wait()
+
+	// All updates should succeed due to proper transaction handling
+	for i, err := range errors {
+		assert.NoError(t, err, "Concurrent update %d should succeed", i+1)
+	}
+
+	// Verify final state - one of the update values should be the final value
+	finalRecord, err := ptc.DB.ReadHealthRecord(ctx, testutils.CreateDate("2024-07-01"))
+	require.NoError(t, err, "failed to read final record state")
+	require.NotNil(t, finalRecord, "final record should exist")
+
+	// The final step count should be one of the updated values (last write wins)
+	possibleValues := []int{10000, 12000, 15000}
+	assert.Contains(t, possibleValues, finalRecord.StepCount,
+		"final step count should be one of the concurrently updated values, got: %d",
+		finalRecord.StepCount)
+
+	// Verify UpdatedAt timestamp was modified
+	assert.True(t, finalRecord.UpdatedAt.After(finalRecord.CreatedAt),
+		"UpdatedAt should be more recent than CreatedAt after concurrent updates")
+}
+
+func TestUpdateHealthRecord_ContextCancellation(t *testing.T) {
+	ptc := testutils.SetupPostgresContainer(context.Background(), t)
+	defer ptc.Cleanup(context.Background(), t)
+
+	// Setup initial record
+	initialRecord := testutils.CreateHealthRecord("2024-08-01", 8500)
+	_, err := ptc.DB.CreateHealthRecord(context.Background(), initialRecord)
+	require.NoError(t, err, "failed to setup initial record")
+
+	// Create a context that gets cancelled immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	updateRecord := &models.HealthRecord{
+		Date:      testutils.CreateDate("2024-08-01"),
+		StepCount: 12000,
+	}
+
+	// Update should fail due to cancelled context
+	err = ptc.DB.UpdateHealthRecord(ctx, updateRecord)
+	assert.Error(t, err, "update should fail with cancelled context")
+	assert.Contains(t, err.Error(), "context canceled",
+		"error should indicate context cancellation")
 }
