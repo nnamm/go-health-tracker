@@ -324,27 +324,25 @@ func TestUpdateHealthRecord(t *testing.T) {
 			validate:    true,
 			description: "Should handle maximum integer step count",
 		},
-		// handlers test case
-		// {
-		// 	name:         "fail_update_non_existing_record",
-		// 	setupRecord:  nil, // No initial record
-		// 	updateRecord: testutils.CreateHealthRecord("2024-06-04", 8500),
-		// 	wantError:    true,
-		// 	errorMsg:     "record not found for date",
-		// 	description:  "Should fail when trying to update non-existing record",
-		// },
-		// handlers test case
-		// {
-		// 	name:        "fail_update_with_negative_step_count",
-		// 	setupRecord: testutils.CreateHealthRecord("2024-06-05", 8500),
-		// 	updateRecord: &models.HealthRecord{
-		// 		Date:      testutils.CreateDate("2024-06-05"),
-		// 		StepCount: -1,
-		// 	},
-		// 	wantError:   true,
-		// 	errorMsg:    "failed to update health record",
-		// 	description: "Should fail with negative step count due to CHECK constraint",
-		// },
+		{
+			name:         "fail_update_non_existing_record",
+			setupRecord:  nil, // No initial record
+			updateRecord: testutils.CreateHealthRecord("2024-06-04", 8500),
+			wantError:    true,
+			errorMsg:     "record not found for date",
+			description:  "Should fail when trying to update non-existing record",
+		},
+		{
+			name:        "fail_update_with_negative_step_count",
+			setupRecord: testutils.CreateHealthRecord("2024-06-05", 8500),
+			updateRecord: &models.HealthRecord{
+				Date:      testutils.CreateDate("2024-06-05"),
+				StepCount: -1,
+			},
+			wantError:   true,
+			errorMsg:    "failed to update health record",
+			description: "Should fail with negative step count due to CHECK constraint",
+		},
 		{
 			name:        "successfully_update_same_value",
 			setupRecord: testutils.CreateHealthRecord("2024-06-06", 8500),
@@ -363,7 +361,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 			// Clean up data before each test case
 			ptc.CleanupTestData(ctx, t)
 
-			// Setup initinal record needed
+			// Setup initinal record if needed
 			if tt.setupRecord != nil {
 				_, err := ptc.DB.CreateHealthRecord(ctx, tt.setupRecord)
 				require.NoError(t, err, "failed to setup initial record for test: %s", tt.description)
@@ -507,4 +505,128 @@ func TestUpdateHealthRecord_ContextCancellation(t *testing.T) {
 	assert.Error(t, err, "update should fail with cancelled context")
 	assert.Contains(t, err.Error(), "context canceled",
 		"error should indicate context cancellation")
+}
+
+func TestDeleteHealthRecord(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Share a single container for all test cases
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	tests := []struct {
+		name        string
+		setupRecord *models.HealthRecord
+		deleteDate  time.Time
+		wantError   bool
+		errorMsg    string
+		description string
+	}{
+		{
+			name:        "successfully_delete_existing_record",
+			setupRecord: testutils.CreateHealthRecord("2024-06-01", 8500),
+			deleteDate:  testutils.CreateDate("2024-06-01"),
+			wantError:   false,
+			description: "Should successfully delete an existing record",
+		},
+		{
+			name:        "successfully_delete_record_with_zero_steps",
+			setupRecord: testutils.CreateHealthRecord("2024-06-02", 0),
+			deleteDate:  testutils.CreateDate("2024-06-02"),
+			wantError:   false,
+			description: "Should successfully delete record with zero step count",
+		},
+		{
+			name:        "successfully_delete_record_with_maximum_steps",
+			setupRecord: testutils.CreateHealthRecord("2024-06-03", 2147483647),
+			deleteDate:  testutils.CreateDate("2024-06-03"),
+			wantError:   false,
+			description: "Should successfully delete record with maximum step count",
+		},
+		{
+			name:        "fail_delete_non_existing_record",
+			setupRecord: nil, // No initial record
+			deleteDate:  testutils.CreateDate("2024-06-04"),
+			wantError:   true,
+			errorMsg:    "record not found for date",
+			description: "Should fail when trying to delete non-existing record",
+		},
+		{
+			name:        "fail_delete_record_after_already_deleted",
+			setupRecord: testutils.CreateHealthRecord("2024-06-05", 8500),
+			deleteDate:  testutils.CreateDate("2024-06-05"),
+			wantError:   true,
+			errorMsg:    "record not found for date",
+			description: "Should fail when trying to delete already deleted record (second attempt)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up data before each test case
+			ptc.CleanupTestData(ctx, t)
+
+			// Setup initial record if needed
+			if tt.setupRecord != nil {
+				_, err := ptc.DB.CreateHealthRecord(ctx, tt.setupRecord)
+				// _, err := ptc.DB.CreateHealthRecord(opCtx, tt.setupRecord)
+				require.NoError(t, err, "failed to setup initial record for test: %s", tt.description)
+
+				// Verify the record exists before description
+				existingRecord, err := ptc.DB.ReadHealthRecord(ctx, tt.setupRecord.Date)
+				require.NoError(t, err, "failed to verify setup record exists")
+				require.NotNil(t, existingRecord, "setup record should exist before deletion")
+			}
+
+			// For the "already deleted" test case, perform the first deletion
+			if tt.name == "fail_delete_record_after_already_deleted" {
+				err := ptc.DB.DeleteHealthRecord(ctx, tt.deleteDate)
+				require.NoError(t, err, "first deletion should succeed")
+
+				// Verify record was deleted
+				deletedRecord, err := ptc.DB.ReadHealthRecord(ctx, tt.deleteDate)
+				require.NoError(t, err, "should be able to query for deleted record")
+				assert.Nil(t, deletedRecord, "record should not exist after first deletion")
+			}
+
+			// Perform the delete operation
+			err := ptc.DB.DeleteHealthRecord(ctx, tt.deleteDate)
+
+			if tt.wantError {
+				require.Error(t, err, "expected error for test case: %s", tt.description)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg,
+						"error message should contain expected substring for test: %s", tt.description)
+				}
+
+				// Verify record strill doesn't exist (for non-existing record case)
+				if tt.setupRecord != nil {
+					nonExistentRecord, err := ptc.DB.ReadHealthRecord(ctx, tt.deleteDate)
+					require.NoError(t, err, "should be able to query for non-existent record")
+					assert.Nil(t, nonExistentRecord, "record should not exist")
+				}
+			} else {
+				require.NoError(t, err, "unexpected error for test case: %s", tt.description)
+
+				// Verify the record was actually deleted
+				deletedRecord, err := ptc.DB.ReadHealthRecord(ctx, tt.deleteDate)
+				require.NoError(t, err, "failed to verify record deletion")
+				assert.Nil(t, deletedRecord,
+					"record should not exist after successful deletion for test: %s", tt.description)
+
+				// Verify other records are not affected (if any exist)
+				allRecords, err := ptc.DB.ReadHealthRecordsByYear(ctx, tt.deleteDate.Year())
+				require.NoError(t, err, "failed to read remaining records")
+
+				// Ensure the deleted record is not in the results
+				for _, record := range allRecords {
+					assert.NotEqual(t,
+						tt.deleteDate.Format("2006-01-02"),
+						record.Date.Format("2006-01-2"),
+						"deleted record should not appear in year results")
+				}
+			}
+		})
+	}
 }

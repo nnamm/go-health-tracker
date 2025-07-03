@@ -225,7 +225,8 @@ func (db *PostgresDB) UpdateHealthRecord(ctx context.Context, hr *models.HealthR
 	}
 
 	if !exists {
-		return fmt.Errorf("record not found for date: %v", hr.Date)
+		err = fmt.Errorf("record not found for date: %v", hr.Date)
+		return err
 	}
 
 	// Update the record
@@ -269,7 +270,8 @@ func (db *PostgresDB) DeleteHealthRecord(ctx context.Context, date time.Time) er
 	}
 
 	if !exists {
-		return fmt.Errorf("record not found for date: %v", date)
+		err = fmt.Errorf("record not found for date: %v", date)
+		return err
 	}
 
 	// Delete the record
@@ -337,7 +339,7 @@ func (db *PostgresDB) HealthCheck(ctx context.Context) error {
 }
 
 // Exec executes a query that doesn't return rows
-func (db *PostgresDB) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+func (db *PostgresDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	return db.pool.Exec(ctx, sql, args...)
 }
 
