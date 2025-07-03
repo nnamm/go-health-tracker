@@ -491,7 +491,7 @@ func TestUpdateHealthRecord_ContextCancellation(t *testing.T) {
 	_, err := ptc.DB.CreateHealthRecord(context.Background(), initialRecord)
 	require.NoError(t, err, "failed to setup initial record")
 
-	// Create a context that gets cancelled immediately
+	// Create a context that gets canceled immediately
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -500,9 +500,9 @@ func TestUpdateHealthRecord_ContextCancellation(t *testing.T) {
 		StepCount: 12000,
 	}
 
-	// Update should fail due to cancelled context
+	// Update should fail due to canceled context
 	err = ptc.DB.UpdateHealthRecord(ctx, updateRecord)
-	assert.Error(t, err, "update should fail with cancelled context")
+	assert.Error(t, err, "update should fail with canceled context")
 	assert.Contains(t, err.Error(), "context canceled",
 		"error should indicate context cancellation")
 }
@@ -629,4 +629,138 @@ func TestDeleteHealthRecord(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteHealthRecord_ConcurrentDeletes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	// Setup initial records for concurrent testing
+	testDates := []string{"2024-07-01", "2024-07-02", "2024-07-03"}
+	for _, dateStr := range testDates {
+		record := testutils.CreateHealthRecord(dateStr, 8500)
+		_, err := ptc.DB.CreateHealthRecord(ctx, record)
+		require.NoError(t, err, "failed to setup initial record for date: %s", dateStr)
+	}
+
+	// Attempt to delete the same record concurrently
+	var wg sync.WaitGroup
+	errors := make([]error, 3)
+	deleteDate := testutils.CreateDate("2024-07-01")
+
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			errors[index] = ptc.DB.DeleteHealthRecord(ctx, deleteDate)
+		}(i)
+	}
+
+	// Wait for all deletions to complete
+	wg.Wait()
+
+	// Only one deletion should succeed, others should fail
+	successCount := 0
+	errorCount := 0
+	for i, err := range errors {
+		if err == nil {
+			successCount++
+		} else {
+			errorCount++
+			assert.Contains(t, err.Error(), "record not found for date",
+				"concurrent deletion %d should fail with appropriate error", i+1)
+		}
+	}
+
+	assert.Equal(t, 1, successCount, "exactly one concurrent deletion should succeed")
+	assert.Equal(t, 2, errorCount, "two concurrent deletions should fail")
+
+	// Verify the record was actually deleted
+	deletedRecord, err := ptc.DB.ReadHealthRecord(ctx, deleteDate)
+	require.NoError(t, err, "should be able to query for deleted record")
+	assert.Nil(t, deletedRecord, "record should not exist after concurrent deletions")
+
+	// Verify other records are unaffected
+	remainingRecords, err := ptc.DB.ReadHealthRecordsByYear(ctx, 2024)
+	require.NoError(t, err, "should be able to read remaining records")
+	assert.Len(t, remainingRecords, 2, "should have 2 remaining records")
+}
+
+func TestDeleteHealthRecord_ContextCancellation(t *testing.T) {
+	ptc := testutils.SetupPostgresContainer(context.Background(), t)
+	defer ptc.Cleanup(context.Background(), t)
+
+	// Setup initial record
+	initialRecord := testutils.CreateHealthRecord("2024-08-01", 8500)
+	_, err := ptc.DB.CreateHealthRecord(context.Background(), initialRecord)
+	require.NoError(t, err, "failed to setup initial record")
+
+	// Create a context that gets canceled immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Delete should fail due to canceled context
+	err = ptc.DB.DeleteHealthRecord(ctx, initialRecord.Date)
+	assert.Error(t, err, "delete should fail with canceled context")
+	assert.Contains(t, err.Error(), "context canceled",
+		"error should indicate context cancelation")
+
+	// Verify record still exists after failed deletion
+	existingRecord, err := ptc.DB.ReadHealthRecord(context.Background(), initialRecord.Date)
+	require.NoError(t, err, "should be able to read record after failed deletion")
+	require.NotNil(t, existingRecord, "record should still exist after canceled deletion")
+	testutils.AssertHealthRecord(t, existingRecord, initialRecord)
+}
+
+func TestDeleteHealthRecord_MultipulRecords(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	testRecords := []*models.HealthRecord{
+		testutils.CreateHealthRecord("2024-09-01", 8500),
+		testutils.CreateHealthRecord("2024-09-02", 9000),
+		testutils.CreateHealthRecord("2024-09-03", 7500),
+		testutils.CreateHealthRecord("2024-09-04", 10000),
+		testutils.CreateHealthRecord("2024-09-05", 6500),
+	}
+
+	for _, record := range testRecords {
+		_, err := ptc.DB.CreateHealthRecord(ctx, record)
+		require.NoError(t, err, "failed to setup record for date: %s",
+			record.Date.Format("2006-01-02"))
+	}
+
+	// Verify all records exist
+	allRecords, err := ptc.DB.ReadHealthRecordsByYearMonth(ctx, 2024, 9)
+	require.NoError(t, err, "failed to read initial records")
+	assert.Len(t, allRecords, 5, "should have 5 initial records")
+
+	// Delete records on by one
+	for i, record := range testRecords {
+		err := ptc.DB.DeleteHealthRecord(ctx, record.Date)
+		require.NoError(t, err, "failed to delete record %d", i+1)
+
+		// Verify this specific recorde was deleted
+		deletedRecord, err := ptc.DB.ReadHealthRecord(ctx, record.Date)
+		require.NoError(t, err, "should be able to query for deleted record")
+		assert.Nil(t, deletedRecord, "record %d should be deleted", i+1)
+
+		// Verify remaining count
+		remainingRecords, err := ptc.DB.ReadHealthRecordsByYearMonth(ctx, 2024, 9)
+		require.NoError(t, err, "failed to read remaining records")
+		expectedCount := 5 - (i + 1)
+		assert.Len(t, remainingRecords, expectedCount,
+			"should have %d remaining records after deleting record %d", expectedCount, i+1)
+	}
+
+	// Verify no records remain
+	finalRecords, err := ptc.DB.ReadHealthRecordsByYearMonth(ctx, 2024, 9)
+	require.NoError(t, err, "failed to read final records")
+	assert.Empty(t, finalRecords, "should have no remaining records")
 }

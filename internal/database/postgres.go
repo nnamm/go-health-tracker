@@ -204,44 +204,18 @@ func (db *PostgresDB) readHealthRecordsByRange(ctx context.Context, startDate, e
 
 // UpdateHealthRecord updates an existing health record
 func (db *PostgresDB) UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error {
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-				err = fmt.Errorf("update failed: %v, rollback failed: %w", err, rollbackErr)
-			}
-		}
-	}()
-
-	// Check if record exists
-	var exists bool
-	checkQuery := "SELECT EXISTS(SELECT 1 FROM health_records WHERE date = $1)"
-	err = tx.QueryRow(ctx, checkQuery, hr.Date).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to check record existence: %w", err)
-	}
-
-	if !exists {
-		err = fmt.Errorf("record not found for date: %v", hr.Date)
-		return err
-	}
-
-	// Update the record
-	updateQuery := `UPDATE health_records
-	                SET step_count = $1, updated_at = $2
-	                WHERE date = $3`
+	query := `UPDATE health_records
+	          SET step_count = $1, updated_at = $2
+	          WHERE date = $3`
 
 	now := time.Now()
-	_, err = tx.Exec(ctx, updateQuery, hr.StepCount, now, hr.Date)
+	tag, err := db.pool.Exec(ctx, query, hr.StepCount, now, hr.Date)
 	if err != nil {
 		return fmt.Errorf("failed to update health record: %w", err)
 	}
 
-	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("record not found for date: %v", hr.Date)
 	}
 
 	return nil
@@ -249,40 +223,15 @@ func (db *PostgresDB) UpdateHealthRecord(ctx context.Context, hr *models.HealthR
 
 // DeleteHealthRecord deletes a health record
 func (db *PostgresDB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-				err = fmt.Errorf("delete failed: %v, rollback failed: %w", err, rollbackErr)
-			}
-		}
-	}()
+	query := `DELETE FROM health_records WHERE date = $1`
 
-	// Check if record exists
-	var exists bool
-	checkQuery := "SELECT EXISTS(SELECT 1 FROM health_records WHERE date = $1)"
-	err = tx.QueryRow(ctx, checkQuery, date).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to check record existence: %w", err)
-	}
-
-	if !exists {
-		err = fmt.Errorf("record not found for date: %v", date)
-		return err
-	}
-
-	// Delete the record
-	deleteQuery := `DELETE FROM health_records WHERE date = $1`
-	_, err = tx.Exec(ctx, deleteQuery, date)
+	tag, err := db.pool.Exec(ctx, query, date)
 	if err != nil {
 		return fmt.Errorf("failed to delete health record: %w", err)
 	}
 
-	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("record not found for date: %v", date)
 	}
 
 	return nil
