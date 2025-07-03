@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/internal/models"
 	"github.com/nnamm/go-health-tracker/testutils"
 	"github.com/stretchr/testify/assert"
@@ -292,7 +293,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		description  string // Additional context for the test case
 	}{
 		{
-			name:        "successfully_update_existing_record",
+			name:        "successfully update existing record",
 			setupRecord: testutils.CreateHealthRecord("2024-06-01", 8500),
 			updateRecord: &models.HealthRecord{
 				Date:      testutils.CreateDate("2024-06-01"),
@@ -303,7 +304,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 			description: "Should successfully update step count of existing record",
 		},
 		{
-			name:        "successfully_update_to_zero_steps",
+			name:        "successfully update to zero steps",
 			setupRecord: testutils.CreateHealthRecord("2024-06-02", 8500),
 			updateRecord: &models.HealthRecord{
 				Date:      testutils.CreateDate("2024-06-02"),
@@ -314,7 +315,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 			description: "Should allow updating to zero step count",
 		},
 		{
-			name:        "successfully_update_to_maximum_int_value",
+			name:        "successfully update to maximum int value",
 			setupRecord: testutils.CreateHealthRecord("2024-06-03", 8500),
 			updateRecord: &models.HealthRecord{
 				Date:      testutils.CreateDate("2024-06-03"),
@@ -325,7 +326,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 			description: "Should handle maximum integer step count",
 		},
 		{
-			name:         "fail_update_non_existing_record",
+			name:         "fail update non existing record",
 			setupRecord:  nil, // No initial record
 			updateRecord: testutils.CreateHealthRecord("2024-06-04", 8500),
 			wantError:    true,
@@ -333,7 +334,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 			description:  "Should fail when trying to update non-existing record",
 		},
 		{
-			name:        "fail_update_with_negative_step_count",
+			name:        "fail update with negative step count",
 			setupRecord: testutils.CreateHealthRecord("2024-06-05", 8500),
 			updateRecord: &models.HealthRecord{
 				Date:      testutils.CreateDate("2024-06-05"),
@@ -344,7 +345,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 			description: "Should fail with negative step count due to CHECK constraint",
 		},
 		{
-			name:        "successfully_update_same_value",
+			name:        "successfully update same value",
 			setupRecord: testutils.CreateHealthRecord("2024-06-06", 8500),
 			updateRecord: &models.HealthRecord{
 				Date:      testutils.CreateDate("2024-06-06"),
@@ -524,28 +525,28 @@ func TestDeleteHealthRecord(t *testing.T) {
 		description string
 	}{
 		{
-			name:        "successfully_delete_existing_record",
+			name:        "successfully delete existing record",
 			setupRecord: testutils.CreateHealthRecord("2024-06-01", 8500),
 			deleteDate:  testutils.CreateDate("2024-06-01"),
 			wantError:   false,
 			description: "Should successfully delete an existing record",
 		},
 		{
-			name:        "successfully_delete_record_with_zero_steps",
+			name:        "successfully delete record with zero steps",
 			setupRecord: testutils.CreateHealthRecord("2024-06-02", 0),
 			deleteDate:  testutils.CreateDate("2024-06-02"),
 			wantError:   false,
 			description: "Should successfully delete record with zero step count",
 		},
 		{
-			name:        "successfully_delete_record_with_maximum_steps",
+			name:        "successfully delete record with maximum steps",
 			setupRecord: testutils.CreateHealthRecord("2024-06-03", 2147483647),
 			deleteDate:  testutils.CreateDate("2024-06-03"),
 			wantError:   false,
 			description: "Should successfully delete record with maximum step count",
 		},
 		{
-			name:        "fail_delete_non_existing_record",
+			name:        "fail delete non existing record",
 			setupRecord: nil, // No initial record
 			deleteDate:  testutils.CreateDate("2024-06-04"),
 			wantError:   true,
@@ -553,7 +554,7 @@ func TestDeleteHealthRecord(t *testing.T) {
 			description: "Should fail when trying to delete non-existing record",
 		},
 		{
-			name:        "fail_delete_record_after_already_deleted",
+			name:        "fail delete record after already deleted",
 			setupRecord: testutils.CreateHealthRecord("2024-06-05", 8500),
 			deleteDate:  testutils.CreateDate("2024-06-05"),
 			wantError:   true,
@@ -580,7 +581,7 @@ func TestDeleteHealthRecord(t *testing.T) {
 			}
 
 			// For the "already deleted" test case, perform the first deletion
-			if tt.name == "fail_delete_record_after_already_deleted" {
+			if tt.name == "fail delete record after already deleted" {
 				err := ptc.DB.DeleteHealthRecord(ctx, tt.deleteDate)
 				require.NoError(t, err, "first deletion should succeed")
 
@@ -763,4 +764,175 @@ func TestDeleteHealthRecord_MultipulRecords(t *testing.T) {
 	finalRecords, err := ptc.DB.ReadHealthRecordsByYearMonth(ctx, 2024, 9)
 	require.NoError(t, err, "failed to read final records")
 	assert.Empty(t, finalRecords, "should have no remaining records")
+}
+
+func TestPing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	canceledCtx, cancelCtx := context.WithCancel(context.Background())
+	cancelCtx()
+
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "successful ping with active connection",
+			ctx:       ctx,
+			wantError: false,
+		},
+		{
+			name:      "ping fails with canceled context",
+			ctx:       canceledCtx,
+			wantError: true,
+			errorMsg:  "context canceled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ptc.DB.Ping(tt.ctx)
+
+			if tt.wantError {
+				require.Error(t, err, "expected an error for test case: %s", tt.name)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg,
+						"error message for '%s' should contain '%s'", tt.name, tt.errorMsg)
+				}
+			} else {
+				require.NoError(t, err, "did not expect an error for test case: %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestHealthCheck(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	canceledCtx, cancelCtx := context.WithCancel(context.Background())
+	cancelCtx()
+
+	tests := []struct {
+		name      string
+		db        *database.PostgresDB
+		ctx       context.Context
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "successful health check with active connection",
+			db:        ptc.DB,
+			ctx:       ctx,
+			wantError: false,
+		},
+		{
+			name:      "health check fails with canceled context",
+			db:        ptc.DB,
+			ctx:       canceledCtx,
+			wantError: true,
+			errorMsg:  "context canceled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.db.HealthCheck(tt.ctx)
+			if tt.wantError {
+				require.Error(t, err, "Expected an error for test case: %s", tt.name)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg, "Error message for '%s' should contain '%s'", tt.name, tt.errorMsg)
+				}
+			} else {
+				require.NoError(t, err, "Did not expect an error for test case: %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestExec(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	ptc := testutils.SetupPostgresContainer(ctx, t)
+	defer ptc.Cleanup(ctx, t)
+
+	// Setup initial record for update/delete tests
+	initialRecord := testutils.CreateHealthRecord("2024-10-01", 1000)
+	_, err := ptc.DB.CreateHealthRecord(ctx, initialRecord)
+	require.NoError(t, err, "failed to setup initial record for exec test")
+
+	canceledCtx, cancelCtx := context.WithCancel(context.Background())
+	cancelCtx()
+
+	tests := []struct {
+		name      string
+		sql       string
+		args      []any
+		ctx       context.Context
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "successful DDL (CREATE TABLE)",
+			sql:       "CREATE TABLE IF NOT EXISTS test_exec_table (id INT);",
+			args:      nil,
+			ctx:       ctx,
+			wantError: false,
+		},
+		{
+			name:      "successful DML (UPDATE)",
+			sql:       "UPDATE health_records SET step_count = $1 WHERE date = $2",
+			args:      []any{2000, initialRecord.Date},
+			ctx:       ctx,
+			wantError: false,
+		},
+		{
+			name:      "failed DML (invalid syntax)",
+			sql:       "UPDATE health_records SET step_count = 2000 WHERE date = ",
+			args:      nil,
+			ctx:       ctx,
+			wantError: true,
+			errorMsg:  "syntax error",
+		},
+		{
+			name:      "failed with canceled context",
+			sql:       "DELETE FROM health_records WHERE date = $1",
+			args:      []any{initialRecord.Date},
+			ctx:       canceledCtx,
+			wantError: true,
+			errorMsg:  "context canceled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ptc.DB.Exec(tt.ctx, tt.sql, tt.args...)
+
+			if tt.wantError {
+				require.Error(t, err, "Expected an error for test case: %s", tt.name)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg, "Error message for '%s' should contain '%s'", tt.name, tt.errorMsg)
+				}
+			} else {
+				require.NoError(t, err, "Did not expect an error for test case: %s", tt.name)
+
+				// Additional verification for successful DML
+				if tt.name == "successful DML (UPDATE)" {
+					updatedRecord, readErr := ptc.DB.ReadHealthRecord(ctx, initialRecord.Date)
+					require.NoError(t, readErr, "Failed to read back record after update for verification")
+					assert.Equal(t, 2000, updatedRecord.StepCount, "Step count should be updated to 2000")
+				}
+			}
+		})
+	}
 }
