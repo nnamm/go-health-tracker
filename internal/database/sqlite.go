@@ -13,8 +13,8 @@ import (
 
 type SQLiteDB struct {
 	*sql.DB
-	stmts map[string]*sql.Stmt
-	mu    sync.RWMutex
+	Stmts map[string]*sql.Stmt
+	Mu    sync.RWMutex
 }
 
 // NewSQLiteDB opens the DB
@@ -29,8 +29,8 @@ func NewSQLiteDB(dataSourceName string) (*SQLiteDB, error) {
 
 	db := &SQLiteDB{
 		DB:    sqlDB,
-		stmts: make(map[string]*sql.Stmt),
-		mu:    sync.RWMutex{},
+		Stmts: make(map[string]*sql.Stmt),
+		Mu:    sync.RWMutex{},
 	}
 
 	if err := db.CreateTable(); err != nil {
@@ -76,15 +76,15 @@ func (db *SQLiteDB) prepareStatements() error {
 		"delete_health_record":       `DELETE FROM health_records WHERE date = ?`,
 	}
 
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.Mu.Lock()
+	defer db.Mu.Unlock()
 
 	for name, query := range queries {
 		stmt, err := db.Prepare(query)
 		if err != nil {
 			return fmt.Errorf("prepare statement %s: %w", name, err)
 		}
-		db.stmts[name] = stmt
+		db.Stmts[name] = stmt
 	}
 
 	return nil
@@ -92,9 +92,9 @@ func (db *SQLiteDB) prepareStatements() error {
 
 // getStmt is helper function to get a prepared statement
 func (db *SQLiteDB) getStmt(name string) (*sql.Stmt, error) {
-	db.mu.RLock()
-	stmt, ok := db.stmts[name]
-	db.mu.RUnlock()
+	db.Mu.RLock()
+	stmt, ok := db.Stmts[name]
+	db.Mu.RUnlock()
 
 	if !ok {
 		return nil, fmt.Errorf("statement %s not found", name)
@@ -104,11 +104,11 @@ func (db *SQLiteDB) getStmt(name string) (*sql.Stmt, error) {
 
 // Close closes the DB
 func (db *SQLiteDB) Close() error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.Mu.Lock()
+	defer db.Mu.Unlock()
 
 	// Close all prepared statements
-	for name, stmt := range db.stmts {
+	for name, stmt := range db.Stmts {
 		if err := stmt.Close(); err != nil {
 			return fmt.Errorf("closing statement %s: %w", name, err)
 		}

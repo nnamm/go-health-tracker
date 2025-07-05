@@ -3,6 +3,8 @@ package database_test
 import (
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/testutils"
 	"github.com/stretchr/testify/assert"
@@ -10,7 +12,28 @@ import (
 
 var testPostgres *database.PostgresDB
 
-func TestGetPoolInfo(t *testing.T) {
+func NewPostgresDBWithMock(t *testing.T) (*database.PostgresDB, sqlmock.Sqlmock) {
+	t.Helper()
+
+	_, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+	}
+
+	poolCfg, err := pgxpool.ParseConfig("")
+	if err != nil {
+		t.Fatalf("failed to parse pgxpool config: %v", err)
+	}
+	poolCfg.ConnConfig.Host = "mock_host"
+
+	t.Log("Note: A proper mock for pgxpool is required. The current setup is a placeholder.")
+
+	mockDB := &database.PostgresDB{} // This won't work as-is.
+
+	return mockDB, mock
+}
+
+func TestPosgres_GetPoolInfo(t *testing.T) {
 	tests := []struct {
 		name     string
 		setupDB  func() *database.PostgresDB
@@ -39,7 +62,7 @@ func TestGetPoolInfo(t *testing.T) {
 	}
 }
 
-func TestClose(t *testing.T) {
+func TestPosgres_Close(t *testing.T) {
 	tests := []struct {
 		name    string
 		setupDB func() *database.PostgresDB
@@ -52,14 +75,6 @@ func TestClose(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		// {
-		// 	name: "already closed pool handles gracegully",
-		// 	setupDB: func() *PostgresDB {
-		// 		// simulates the state in which Close() is acutually called
-		// 		return &PostgresDB{pool: nil}
-		// 	},
-		// 	wantErr: false,
-		// },
 	}
 
 	for _, tt := range tests {
