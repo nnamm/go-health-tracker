@@ -13,12 +13,12 @@ import (
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
 
-var testDB *DB
+var testDB *SQLiteDB
 
 func TestMain(m *testing.M) {
 	// set up a database for testing
 	var err error
-	testDB, err = NewDB(":memory:")
+	testDB, err = NewSQLiteDB(":memory:")
 	if err != nil {
 		panic(err)
 	}
@@ -148,7 +148,7 @@ func TestHealthRecordCRUDScenarios(t *testing.T) {
 func TestReadHealthRecords(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(*testing.T, context.Context, *DB)
+		setup   func(*testing.T, context.Context, *SQLiteDB)
 		year    int
 		month   *int // optional
 		want    []models.HealthRecord
@@ -156,7 +156,7 @@ func TestReadHealthRecords(t *testing.T) {
 	}{
 		{
 			name: "successful yearly query - returns all records for 2024",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2024-12-31"), StepCount: 11000},
@@ -174,7 +174,7 @@ func TestReadHealthRecords(t *testing.T) {
 		},
 		{
 			name: "successful monthly query - returns only Jan 2024 records",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2024-01-31"), StepCount: 11000},
@@ -192,7 +192,7 @@ func TestReadHealthRecords(t *testing.T) {
 		},
 		{
 			name: "empty result - no records for year",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2023-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2025-01-01"), StepCount: 11000},
@@ -235,14 +235,14 @@ func TestReadHealthRecords(t *testing.T) {
 func TestUpdateHealthRecord(t *testing.T) {
 	tests := []struct {
 		name      string
-		setup     func(*testing.T, context.Context, *DB)
+		setup     func(*testing.T, context.Context, *SQLiteDB)
 		update    *models.HealthRecord
 		nonUpdate *models.HealthRecord
 		wantErr   error
 	}{
 		{
 			name: "successful update",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -257,7 +257,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		},
 		{
 			name: "successful update - max step count",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -272,7 +272,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		},
 		{
 			name: "successful update - zero step count",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -287,7 +287,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		},
 		{
 			name: "verify update affects only specified record",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2024-01-02"), StepCount: 20000},
@@ -314,7 +314,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		},
 		{
 			name: "error - update with different date (future)",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -329,7 +329,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		},
 		{
 			name: "error - update with different date (past)",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -344,7 +344,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 		},
 		{
 			name: "error - update with improbable step count",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -388,14 +388,14 @@ func TestUpdateHealthRecord(t *testing.T) {
 func TestDeleteHealthRecord(t *testing.T) {
 	tests := []struct {
 		name       string
-		setup      func(*testing.T, context.Context, *DB)
+		setup      func(*testing.T, context.Context, *SQLiteDB)
 		deleteDate time.Time
 		nonDelete  *models.HealthRecord
 		wantErr    error
 	}{
 		{
 			name: "successful delete",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -407,7 +407,7 @@ func TestDeleteHealthRecord(t *testing.T) {
 		},
 		{
 			name: "verify delete affects only specified record",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				records := []models.HealthRecord{
 					{Date: dbtest.CreateDate("2024-01-01"), StepCount: 10000},
 					{Date: dbtest.CreateDate("2024-01-02"), StepCount: 20000},
@@ -429,7 +429,7 @@ func TestDeleteHealthRecord(t *testing.T) {
 		},
 		{
 			name: "error - delete with different date (future)",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,
@@ -441,7 +441,7 @@ func TestDeleteHealthRecord(t *testing.T) {
 		},
 		{
 			name: "error - delete with different date (past)",
-			setup: func(t *testing.T, ctx context.Context, db *DB) {
+			setup: func(t *testing.T, ctx context.Context, db *SQLiteDB) {
 				record := &models.HealthRecord{
 					Date:      dbtest.CreateDate("2024-01-01"),
 					StepCount: 10000,

@@ -35,7 +35,7 @@ type DatabaseConfig struct {
 	MaxConnIdleTime time.Duration
 }
 
-// Global database configuration instance
+// DBConfig is global database configuration instance
 var DBConfig *DatabaseConfig
 
 // LoadDatabaseConfig loads database configuration from environment variables

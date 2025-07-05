@@ -23,7 +23,7 @@ func NewDatabase() (DBInterface, error) {
 	case config.DatabasePostgreSQL:
 		return NewPostgresDB(connectionString)
 	case config.DatabaseSQLite:
-		return NewDB(connectionString)
+		return NewSQLiteDB(connectionString)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbConfig.Type)
 	}
@@ -45,7 +45,7 @@ func NewDatabaseWithConfig(dbConfig *config.DatabaseConfig) (DBInterface, error)
 	case config.DatabasePostgreSQL:
 		return NewPostgresDB(connectionString)
 	case config.DatabaseSQLite:
-		return NewDB(connectionString)
+		return NewSQLiteDB(connectionString)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbConfig.Type)
 	}

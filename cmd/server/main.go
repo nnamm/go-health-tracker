@@ -22,13 +22,9 @@ const (
 // It initializes the database connection, configures routing, and starts the HTTP server.
 func main() {
 	// Configure database connection settings
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "./health_tracker.db"
-	}
-	db, err := database.NewDB(dbPath)
+	db, err := database.NewDatabase()
 	if err != nil {
-		log.Fatalf("failed to connect database: %v", err)
+		log.Fatalf("failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
