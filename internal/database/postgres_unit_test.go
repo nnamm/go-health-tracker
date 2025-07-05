@@ -1,23 +1,25 @@
-package database
+package database_test
 
 import (
 	"testing"
 
+	"github.com/nnamm/go-health-tracker/internal/database"
+	"github.com/nnamm/go-health-tracker/testutils"
 	"github.com/stretchr/testify/assert"
 )
 
-var testPostgres PostgresDB
+var testPostgres *database.PostgresDB
 
 func TestGetPoolInfo(t *testing.T) {
 	tests := []struct {
 		name     string
-		setupDB  func() *PostgresDB
+		setupDB  func() *database.PostgresDB
 		expected map[string]any
 	}{
 		{
 			name: "pool not initialized returns not_initialized status",
-			setupDB: func() *PostgresDB {
-				return &PostgresDB{pool: nil}
+			setupDB: func() *database.PostgresDB {
+				return testutils.NewPostgresDBForTest()
 			},
 			expected: map[string]any{
 				"status": "not_initialized",
@@ -40,13 +42,13 @@ func TestGetPoolInfo(t *testing.T) {
 func TestClose(t *testing.T) {
 	tests := []struct {
 		name    string
-		setupDB func() *PostgresDB
+		setupDB func() *database.PostgresDB
 		wantErr bool
 	}{
 		{
 			name: "nil pool closes without error",
-			setupDB: func() *PostgresDB {
-				return &PostgresDB{pool: nil}
+			setupDB: func() *database.PostgresDB {
+				return testutils.NewPostgresDBForTest()
 			},
 			wantErr: false,
 		},

@@ -58,3 +58,7 @@ func (ptc *PostgresTestContainer) CleanupTestData(ctx context.Context, t *testin
 	_, err := ptc.DB.Exec(ctx, "TRUNCATE TABLE health_records RESTART IDENTITY")
 	require.NoError(t, err, "failed to cleanup test data")
 }
+
+func NewPostgresDBForTest() *database.PostgresDB {
+	return &database.PostgresDB{} // pool field will be nil by default
+}

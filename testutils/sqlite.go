@@ -1,4 +1,4 @@
-package dbtest
+package testutils
 
 import (
 	"context"
@@ -6,31 +6,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/nnamm/go-health-tracker/internal/models"
+	"github.com/stretchr/testify/require"
 )
 
-// NewTestDB creates a new in-memory database for testing
-func NewTestDB(t *testing.T) *sql.DB {
+// SetupSQLiteTester sets up a SQLite database for testing
+func SetupSQLiteTester(t *testing.T) (*database.SQLiteDB, func()) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("db connection error: %v", err)
-	}
 
-	t.Cleanup(func() {
+	// Set up a database for testing
+	db, err := database.NewSQLiteDB(":memory:")
+	require.NoError(t, err)
+
+	// Create table. Assumes CreateTable() is now a public method.
+	err = db.CreateTable()
+	require.NoError(t, err)
+
+	cleanup := func() {
 		db.Close()
-	})
-
-	return db
-}
-
-// CreateDate returns a time.Time from a string
-func CreateDate(dateStr string) time.Time {
-	t, err := time.Parse("2006-01-02", dateStr)
-	if err != nil {
-		panic(err)
 	}
-	return t
+	return db, cleanup
 }
 
 // MonthOf returns a pointer to an int
@@ -38,7 +34,7 @@ func MonthOf(m int) *int {
 	return &m
 }
 
-// assertHealthRecordEqual compares two HealthRecord
+// AssertHealthRecordEqual compares two HealthRecord
 func AssertHealthRecordEqual(t *testing.T, got, want *models.HealthRecord) {
 	t.Helper()
 	if got.StepCount != want.StepCount {
@@ -46,7 +42,7 @@ func AssertHealthRecordEqual(t *testing.T, got, want *models.HealthRecord) {
 	}
 }
 
-// AssertHealthRecordEqual compares two slices of HealthRecord
+// AssertHealthRecordsEqual compares two slices of HealthRecord
 func AssertHealthRecordsEqual(t *testing.T, got, want []models.HealthRecord) {
 	t.Helper()
 	if len(got) != len(want) {

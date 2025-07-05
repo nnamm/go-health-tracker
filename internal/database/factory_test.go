@@ -1,10 +1,11 @@
-package database
+package database_test
 
 import (
 	"testing"
 	"time"
 
 	"github.com/nnamm/go-health-tracker/internal/config"
+	"github.com/nnamm/go-health-tracker/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +50,7 @@ func TestGetDatabaseType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config.DBConfig = tt.dbConfig
-			result := GetDatabaseType()
+			result := database.GetDatabaseType()
 			assert.Equal(t, tt.expected, result, "GetDatabaseType() should return %v", tt.expected)
 		})
 	}
@@ -218,7 +219,7 @@ func TestValidateConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := ValidateConfiguration(tt.config)
+			err := database.ValidateConfiguration(tt.config)
 
 			if tt.wantError {
 				require.Error(t, err, "ValidateConfiguration() should return an error")

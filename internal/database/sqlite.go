@@ -33,7 +33,7 @@ func NewSQLiteDB(dataSourceName string) (*SQLiteDB, error) {
 		mu:    sync.RWMutex{},
 	}
 
-	if err := db.createTable(); err != nil {
+	if err := db.CreateTable(); err != nil {
 		return nil, fmt.Errorf("creating table: %w", err)
 	}
 
@@ -45,7 +45,7 @@ func NewSQLiteDB(dataSourceName string) (*SQLiteDB, error) {
 }
 
 // CreateTable inisializes the table
-func (db *SQLiteDB) createTable() error {
+func (db *SQLiteDB) CreateTable() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS health_records (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

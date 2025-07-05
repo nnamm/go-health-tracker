@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateHealthRecord(t *testing.T) {
+func TestPosgres_CreateHealthRecord(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -83,7 +83,7 @@ func TestCreateHealthRecord(t *testing.T) {
 }
 
 // TestCreateHealthRecord_DuplicateConstraint tests UNIQUE constraint violation
-func TestCreateHealthRecord_DuplicateConstraint(t *testing.T) {
+func TestPosgres_CreateHealthRecord_DuplicateConstraint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -105,7 +105,7 @@ func TestCreateHealthRecord_DuplicateConstraint(t *testing.T) {
 	assert.Contains(t, err.Error(), "duplicate key value violates unique constraint")
 }
 
-func TestReadHealthRecord(t *testing.T) {
+func TestPosgres_ReadHealthRecord(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -157,7 +157,7 @@ func TestReadHealthRecord(t *testing.T) {
 	}
 }
 
-func TestReadHealthRecorsByYear(t *testing.T) {
+func TestPosgres_ReadHealthRecorsByYear(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -214,7 +214,7 @@ func TestReadHealthRecorsByYear(t *testing.T) {
 	}
 }
 
-func TestReadHealthRecorsByYearMonth(t *testing.T) {
+func TestPosgres_ReadHealthRecorsByYearMonth(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -275,7 +275,7 @@ func TestReadHealthRecorsByYearMonth(t *testing.T) {
 	}
 }
 
-func TestUpdateHealthRecord(t *testing.T) {
+func TestPosgres_UpdateHealthRecord(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -420,7 +420,7 @@ func TestUpdateHealthRecord(t *testing.T) {
 	}
 }
 
-func TestUpdateHealthRecord_ConcurrentUpdates(t *testing.T) {
+func TestPosgres_UpdateHealthRecord_ConcurrentUpdates(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -483,7 +483,7 @@ func TestUpdateHealthRecord_ConcurrentUpdates(t *testing.T) {
 		"UpdatedAt should be more recent than CreatedAt after concurrent updates")
 }
 
-func TestUpdateHealthRecord_ContextCancellation(t *testing.T) {
+func TestPosgres_UpdateHealthRecord_ContextCancellation(t *testing.T) {
 	ptc := testutils.SetupPostgresContainer(context.Background(), t)
 	defer ptc.Cleanup(context.Background(), t)
 
@@ -508,7 +508,7 @@ func TestUpdateHealthRecord_ContextCancellation(t *testing.T) {
 		"error should indicate context cancellation")
 }
 
-func TestDeleteHealthRecord(t *testing.T) {
+func TestPosgres_DeleteHealthRecord(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -632,7 +632,7 @@ func TestDeleteHealthRecord(t *testing.T) {
 	}
 }
 
-func TestDeleteHealthRecord_ConcurrentDeletes(t *testing.T) {
+func TestPosgres_DeleteHealthRecord_ConcurrentDeletes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -690,7 +690,7 @@ func TestDeleteHealthRecord_ConcurrentDeletes(t *testing.T) {
 	assert.Len(t, remainingRecords, 2, "should have 2 remaining records")
 }
 
-func TestDeleteHealthRecord_ContextCancellation(t *testing.T) {
+func TestPosgres_DeleteHealthRecord_ContextCancellation(t *testing.T) {
 	ptc := testutils.SetupPostgresContainer(context.Background(), t)
 	defer ptc.Cleanup(context.Background(), t)
 
@@ -716,7 +716,7 @@ func TestDeleteHealthRecord_ContextCancellation(t *testing.T) {
 	testutils.AssertHealthRecord(t, existingRecord, initialRecord)
 }
 
-func TestDeleteHealthRecord_MultipulRecords(t *testing.T) {
+func TestPosgres_DeleteHealthRecord_MultipulRecords(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -766,7 +766,7 @@ func TestDeleteHealthRecord_MultipulRecords(t *testing.T) {
 	assert.Empty(t, finalRecords, "should have no remaining records")
 }
 
-func TestPing(t *testing.T) {
+func TestPosgres_Ping(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -812,7 +812,7 @@ func TestPing(t *testing.T) {
 	}
 }
 
-func TestHealthCheck(t *testing.T) {
+func TestPosgres_HealthCheck(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -859,7 +859,7 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-func TestExec(t *testing.T) {
+func TestPosgres_Exec(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
