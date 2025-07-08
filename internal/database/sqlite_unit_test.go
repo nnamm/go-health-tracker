@@ -56,15 +56,3 @@ func NewSQLiteDBWithMock(t *testing.T) (*database.SQLiteDB, sqlmock.Sqlmock) {
 
 	return sqliteDB, mock
 }
-
-func TestSQLite_CreateHealthRecordRollback(t *testing.T) {
-}
-
-func TestSQLite_CreateHealthRecordRollbackOnConstraintViolation(t *testing.T) {
-}
-
-func TestSQLite_UpdateHealthRecordRollback(t *testing.T) {
-}
-
-func TestSQLite_DeleteHealthRecordRollback(t *testing.T) {
-}
