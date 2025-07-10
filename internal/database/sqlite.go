@@ -11,23 +11,14 @@ import (
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
 
-type DB struct {
+type SQLiteDB struct {
 	*sql.DB
-	stmts map[string]*sql.Stmt
-	mu    sync.RWMutex
+	Stmts map[string]*sql.Stmt
+	Mu    sync.RWMutex
 }
 
-type DBInterface interface {
-	CreateHealthRecord(ctx context.Context, hr *models.HealthRecord) (*models.HealthRecord, error)
-	ReadHealthRecord(ctx context.Context, date time.Time) (*models.HealthRecord, error)
-	ReadHealthRecordsByYear(ctx context.Context, year int) ([]models.HealthRecord, error)
-	ReadHealthRecordsByYearMonth(ctx context.Context, year, month int) ([]models.HealthRecord, error)
-	UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error
-	DeleteHealthRecord(ctx context.Context, date time.Time) error
-}
-
-// NewDB opens the DB
-func NewDB(dataSourceName string) (*DB, error) {
+// NewSQLiteDB opens the DB
+func NewSQLiteDB(dataSourceName string) (*SQLiteDB, error) {
 	sqlDB, err := sql.Open("sqlite3", dataSourceName)
 	if err != nil {
 		return nil, err
@@ -36,13 +27,13 @@ func NewDB(dataSourceName string) (*DB, error) {
 		return nil, err
 	}
 
-	db := &DB{
+	db := &SQLiteDB{
 		DB:    sqlDB,
-		stmts: make(map[string]*sql.Stmt),
-		mu:    sync.RWMutex{},
+		Stmts: make(map[string]*sql.Stmt),
+		Mu:    sync.RWMutex{},
 	}
 
-	if err := db.createTable(); err != nil {
+	if err := db.CreateTable(); err != nil {
 		return nil, fmt.Errorf("creating table: %w", err)
 	}
 
@@ -54,7 +45,7 @@ func NewDB(dataSourceName string) (*DB, error) {
 }
 
 // CreateTable inisializes the table
-func (db *DB) createTable() error {
+func (db *SQLiteDB) CreateTable() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS health_records (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +67,7 @@ func (db *DB) createTable() error {
 }
 
 // PrepareStatements prepares SQL statements
-func (db *DB) prepareStatements() error {
+func (db *SQLiteDB) prepareStatements() error {
 	queries := map[string]string{
 		"insert_health_record":       `INSERT INTO health_records (date, step_count, created_at, updated_at) VALUES (?, ?, ?, ?)`,
 		"select_health_record":       `SELECT id, date, step_count, created_at, updated_at FROM health_records WHERE date = ?`,
@@ -85,25 +76,25 @@ func (db *DB) prepareStatements() error {
 		"delete_health_record":       `DELETE FROM health_records WHERE date = ?`,
 	}
 
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.Mu.Lock()
+	defer db.Mu.Unlock()
 
 	for name, query := range queries {
 		stmt, err := db.Prepare(query)
 		if err != nil {
 			return fmt.Errorf("prepare statement %s: %w", name, err)
 		}
-		db.stmts[name] = stmt
+		db.Stmts[name] = stmt
 	}
 
 	return nil
 }
 
 // getStmt is helper function to get a prepared statement
-func (db *DB) getStmt(name string) (*sql.Stmt, error) {
-	db.mu.RLock()
-	stmt, ok := db.stmts[name]
-	db.mu.RUnlock()
+func (db *SQLiteDB) getStmt(name string) (*sql.Stmt, error) {
+	db.Mu.RLock()
+	stmt, ok := db.Stmts[name]
+	db.Mu.RUnlock()
 
 	if !ok {
 		return nil, fmt.Errorf("statement %s not found", name)
@@ -112,12 +103,12 @@ func (db *DB) getStmt(name string) (*sql.Stmt, error) {
 }
 
 // Close closes the DB
-func (db *DB) Close() error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
+func (db *SQLiteDB) Close() error {
+	db.Mu.Lock()
+	defer db.Mu.Unlock()
 
 	// Close all prepared statements
-	for name, stmt := range db.stmts {
+	for name, stmt := range db.Stmts {
 		if err := stmt.Close(); err != nil {
 			return fmt.Errorf("closing statement %s: %w", name, err)
 		}
@@ -128,7 +119,7 @@ func (db *DB) Close() error {
 }
 
 // withTxContext executes a function with a transaction and context
-func (db *DB) withTxContext(ctx context.Context, fn func(*sql.Tx) error) error {
+func (db *SQLiteDB) withTxContext(ctx context.Context, fn func(*sql.Tx) error) error {
 	// Start a transaction for the context
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -163,7 +154,7 @@ func (db *DB) withTxContext(ctx context.Context, fn func(*sql.Tx) error) error {
 }
 
 // CreateHealthRecord inserts a new record
-func (db *DB) CreateHealthRecord(ctx context.Context, hr *models.HealthRecord) (*models.HealthRecord, error) {
+func (db *SQLiteDB) CreateHealthRecord(ctx context.Context, hr *models.HealthRecord) (*models.HealthRecord, error) {
 	insertStmt, err := db.getStmt("insert_health_record")
 	if err != nil {
 		return nil, fmt.Errorf("getting insert statement: %w", err)
@@ -202,7 +193,7 @@ func (db *DB) CreateHealthRecord(ctx context.Context, hr *models.HealthRecord) (
 }
 
 // ReadHealthRecord retrieves a health record by date
-func (db *DB) ReadHealthRecord(ctx context.Context, date time.Time) (*models.HealthRecord, error) {
+func (db *SQLiteDB) ReadHealthRecord(ctx context.Context, date time.Time) (*models.HealthRecord, error) {
 	selectStmt, err := db.getStmt("select_health_record")
 	if err != nil {
 		return nil, fmt.Errorf("getting select statement: %w", err)
@@ -221,21 +212,21 @@ func (db *DB) ReadHealthRecord(ctx context.Context, date time.Time) (*models.Hea
 }
 
 // ReadHealthRecordsByYear retrieves record(s) by year
-func (db *DB) ReadHealthRecordsByYear(ctx context.Context, year int) ([]models.HealthRecord, error) {
+func (db *SQLiteDB) ReadHealthRecordsByYear(ctx context.Context, year int) ([]models.HealthRecord, error) {
 	startDate := time.Date(year, time.Month(1), 1, 0, 0, 0, 0, time.UTC)
 	endDate := startDate.AddDate(1, 0, 0)
 	return db.readHealthRecordsByRange(ctx, startDate, endDate)
 }
 
 // ReadHealthRecordsByYearMonth retrieves record(s) by year and month
-func (db *DB) ReadHealthRecordsByYearMonth(ctx context.Context, year, month int) ([]models.HealthRecord, error) {
+func (db *SQLiteDB) ReadHealthRecordsByYearMonth(ctx context.Context, year, month int) ([]models.HealthRecord, error) {
 	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	endDate := startDate.AddDate(0, 1, 0)
 	return db.readHealthRecordsByRange(ctx, startDate, endDate)
 }
 
 // readHealthRecordsByRange retrieves records between startDate and endDate
-func (db *DB) readHealthRecordsByRange(ctx context.Context, startDate, endDate time.Time) ([]models.HealthRecord, error) {
+func (db *SQLiteDB) readHealthRecordsByRange(ctx context.Context, startDate, endDate time.Time) ([]models.HealthRecord, error) {
 	selectStmt, err := db.getStmt("select_range_health_record")
 	if err != nil {
 		return nil, fmt.Errorf("getting select_range statement: %w", err)
@@ -264,7 +255,7 @@ func (db *DB) readHealthRecordsByRange(ctx context.Context, startDate, endDate t
 }
 
 // UpdateHealthRecord updates an existing health record
-func (db *DB) UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error {
+func (db *SQLiteDB) UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) error {
 	updateStmt, err := db.getStmt("update_health_record")
 	if err != nil {
 		return fmt.Errorf("getting update statement: %w", err)
@@ -294,7 +285,7 @@ func (db *DB) UpdateHealthRecord(ctx context.Context, hr *models.HealthRecord) e
 }
 
 // DeleteHealthRecord deletes a health record by date
-func (db *DB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
+func (db *SQLiteDB) DeleteHealthRecord(ctx context.Context, date time.Time) error {
 	dleleteStmt, err := db.getStmt("delete_health_record")
 	if err != nil {
 		return fmt.Errorf("getting delete statement: %w", err)

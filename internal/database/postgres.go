@@ -8,81 +8,81 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nnamm/go-health-tracker/internal/config"
 	"github.com/nnamm/go-health-tracker/internal/models"
 )
 
-// PostgresDB represents a PostgreSQL database connection pool
+// PgxPool is a wrapper around pgxpool.Pool that provides a more convenient interface for the database.
+type PgxPool interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Ping(ctx context.Context) error
+	Close()
+	Stat() *pgxpool.Stat
+}
+
+// PostgresDB is a wrapper around pgxpool.Pool that provides a more convenient interface for the database.
 type PostgresDB struct {
-	pool *pgxpool.Pool
+	pool PgxPool
 }
 
-// NewPostgresDB creates a new PostgreSQL database connection pool using configuration
-func NewPostgresDB(dataSourceName string) (*PostgresDB, error) {
-	return NewPostgresDBWithConfig(dataSourceName, config.DBConfig)
+// DBOption is a function that can be used to configure the database.
+type DBOption func(*pgxpool.Config)
+
+func WithMaxConns(n int32) DBOption {
+	return func(cfg *pgxpool.Config) { cfg.MaxConns = n }
 }
 
-// NewPostgresDBWithConfig creates a new PostgreSQL database connection pool with explicit configuration
-// This function is useful for testing or when you need to override the global config
-func NewPostgresDBWithConfig(dataSourceName string, dbConfig *config.DatabaseConfig) (*PostgresDB, error) {
-	if dbConfig == nil {
-		return nil, fmt.Errorf("database configuration cannot be nil")
-	}
+func WithMinConns(n int32) DBOption {
+	return func(cfg *pgxpool.Config) { cfg.MinConns = n }
+}
 
-	// Use existing validation from factory.go instead of duplicating logic
-	if err := ValidateConfiguration(dbConfig); err != nil {
-		return nil, fmt.Errorf("invalid database configuration: %w", err)
-	}
+func WithConnLife(d time.Duration) DBOption {
+	return func(cfg *pgxpool.Config) { cfg.MaxConnLifetime = d }
+}
 
-	// Parse the pool configuration from connection string
-	poolConfig, err := pgxpool.ParseConfig(dataSourceName)
+// NewPostgresDB creates a new PostgresDB instance.
+func NewPostgresDB(dsn string, opts ...DBOption) (*PostgresDB, error) {
+	poolCfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse postgres config: %w", err)
+		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	// Apply configuration values from config instead of hardcoded values
-	poolConfig.MaxConns = dbConfig.MaxConns
-	poolConfig.MinConns = dbConfig.MinConns
-	poolConfig.MaxConnLifetime = dbConfig.MaxConnLifetime
-	poolConfig.MaxConnIdleTime = dbConfig.MaxConnIdleTime
+	poolCfg.MaxConns = 10
+	poolCfg.MinConns = 2
+	poolCfg.MaxConnLifetime = 30 * time.Minute
+	poolCfg.MaxConnIdleTime = poolCfg.MaxConnLifetime / 2
 
-	// Set health check period based on best practices
-	// Health check period should be shorter than max idle time for optimal performance
-	healthCheckPeriod := time.Minute
-	if dbConfig.MaxConnIdleTime > 2*time.Minute {
-		healthCheckPeriod = dbConfig.MaxConnIdleTime / 2
+	for _, apply := range opts {
+		apply(poolCfg)
 	}
-	poolConfig.HealthCheckPeriod = healthCheckPeriod
 
-	// Create connection pool with timeout context
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create postgres pool: %w", err)
+		return nil, fmt.Errorf("new pool: %w", err)
 	}
 
-	// Test the connection with a timeout
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer pingCancel()
-
-	if err = pool.Ping(pingCtx); err != nil {
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("failed to ping postgres: %w", err)
+		return nil, fmt.Errorf("ping: %w", err)
 	}
 
-	db := &PostgresDB{
-		pool: pool,
-	}
+	db := &PostgresDB{pool: pool}
 
-	// Create table with timeout context
 	if err := db.createTable(); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("failed to create table: %w", err)
+		return nil, err
 	}
 
 	return db, nil
+}
+
+// NewPostgresDBWithPool creates a new PostgresDB instance with a pgxpool.Pool.
+func NewPostgresDBWithPool(pool PgxPool) *PostgresDB {
+	return &PostgresDB{pool: pool}
 }
 
 // createTable creates the health_records table if it doesn't exist
